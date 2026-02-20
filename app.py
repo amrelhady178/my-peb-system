@@ -3,9 +3,22 @@ import pandas as pd
 import sqlite3
 import json
 from datetime import datetime
+import os
 
-# --- إعدادات الصفحة ---
-st.set_page_config(page_title="Sales Bay - PEB System", layout="wide", initial_sidebar_state="collapsed")
+# ==========================================
+# --- إعدادات الصفحة والهوية البصرية ---
+# ==========================================
+st.set_page_config(page_title="Sales Bay", page_icon="🏗️", layout="wide", initial_sidebar_state="collapsed")
+
+# كود سري (CSS) لإخفاء علامات Streamlit بالكامل
+hide_streamlit_style = """
+            <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            header {visibility: hidden;}
+            </style>
+            """
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # --- قاعدة البيانات ---
 def create_db():
@@ -31,8 +44,6 @@ def create_db():
 
 create_db()
 
-# --- خريطة الدول (الشرق الأوسط وأفريقيا) ---
-# تم تعديل الجزائر لتكون AL
 countries_map = {
     "Algeria": "AL", "Angola": "AO", "Bahrain": "BH", "Botswana": "BW", "Burkina Faso": "BF",
     "Burundi": "BI", "Cameroon": "CM", "Central African Republic": "CF", "Chad": "TD",
@@ -64,41 +75,55 @@ def get_next_serial():
         except: pass
     return max_seq + 1
 
-# --- نظام تسجيل الدخول ---
+# ==========================================
+# --- شاشة تسجيل الدخول (الاحترافية) ---
+# ==========================================
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 
 def login_screen():
-    st.title("🏗️ Sales Bay - PEB System")
-    user = st.text_input("Username")
-    pw = st.text_input("Password", type="password")
-    if st.button("Login"):
-        users = {"eng_ahmed": "123", "eng_mohamed": "456", "admin": "admin789"}
-        if user in users and users[user] == pw:
-            st.session_state.logged_in = True
-            st.session_state.username = user
-            st.rerun()
+    # تظبيط مقاسات الشاشة عشان اللوجو يكون في النص
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.write("") # مسافة من فوق
+        st.write("")
+        # محاولة عرض اللوجو لو موجود
+        logo_path = "logo.png" if os.path.exists("logo.png") else ("logo.jpg" if os.path.exists("logo.jpg") else None)
+        if logo_path:
+            st.image(logo_path, use_container_width=True)
         else:
-            st.error("Invalid Credentials")
+            st.markdown("<h1 style='text-align: center;'>🏗️ Sales Bay</h1>", unsafe_allow_html=True)
+        
+        st.markdown("<h3 style='text-align: center; color: gray;'>Welcome Back</h3>", unsafe_allow_html=True)
+        
+        user = st.text_input("Username")
+        pw = st.text_input("Password", type="password")
+        if st.button("Login", use_container_width=True, type="primary"):
+            users = {"eng_ahmed": "123", "eng_mohamed": "456", "admin": "admin789"}
+            if user in users and users[user] == pw:
+                st.session_state.logged_in = True
+                st.session_state.username = user
+                st.rerun()
+            else:
+                st.error("Invalid Credentials")
 
 if not st.session_state.logged_in:
     login_screen()
     st.stop()
 
+# ==========================================
+# --- القائمة الجانبية للموقع من جوه ---
+# ==========================================
+logo_path = "logo.png" if os.path.exists("logo.png") else ("logo.jpg" if os.path.exists("logo.jpg") else None)
+if logo_path:
+    st.sidebar.image(logo_path, use_container_width=True)
 st.sidebar.title(f"👤 {st.session_state.username}")
-if st.sidebar.button("Logout"):
+if st.sidebar.button("Logout", use_container_width=True):
     st.session_state.logged_in = False
     st.rerun()
 
-# ==========================================
-# --- نظام الصلاحيات (Admin Access) ---
-# ==========================================
 is_admin = (st.session_state.username == "admin")
-
-tabs_titles = [
-    "📝 Quotation Workspace", "📋 Quotation Log", "🏗️ Jobs", "💰 Collections", "📊 KPIs & Reports"
-]
-if is_admin:
-    tabs_titles.append("🕵️ Prospect List")
+tabs_titles = ["📝 Quotation Workspace", "📋 Quotation Log", "🏗️ Jobs", "💰 Collections", "📊 KPIs & Reports"]
+if is_admin: tabs_titles.append("🕵️ Prospect List")
 
 tabs = st.tabs(tabs_titles)
 tab1, tab2, tab3, tab4, tab5 = tabs[0], tabs[1], tabs[2], tabs[3], tabs[4]
@@ -176,26 +201,22 @@ with tab1:
         db_country = get_val('country', "Egypt")
         
         if is_revision and db_country not in country_list and db_country != "":
-            default_index = len(country_list) # Index of "Other"
+            default_index = len(country_list)
         else:
             default_index = country_list.index(db_country) if db_country in country_list else country_list.index("Egypt")
             
         country_selection = st.selectbox("Country Territory", country_list + ["Other"], index=default_index)
         
-        # --- التعديل الذكي لخانة Other ---
         matched_country = None
         if country_selection == "Other":
             sc_c1, sc_c2 = st.columns([2, 1])
             with sc_c1:
                 final_country_input = st.text_input("Country Name", value=db_country if (is_revision and db_country not in country_list) else "")
             
-            # البحث عن البلد المدخلة لمعرفة هل هي موجودة أصلاً؟
             matched_country = next((k for k in countries_map.keys() if k.lower() == final_country_input.strip().lower()), None)
             
             with sc_c2:
                 default_cc = q_data['quotation_no'].split('-')[0] if (is_revision and q_data.get('quotation_no')) else ""
-                
-                # لو البلد موجودة، يقفل الكود ويحطه أوتوماتيك
                 if matched_country:
                     custom_cc = st.text_input("Code (Auto)", value=countries_map[matched_country], disabled=True)
                     cc = countries_map[matched_country]
@@ -317,7 +338,6 @@ with tab1:
     submit = st.button(submit_btn_text, type="primary", use_container_width=True)
 
     if submit:
-        # رسالة خطأ ذكية تمنعه لو مكملش الكود لبلد مش موجودة فعلاً
         if project_name == "" or client_company == "" or final_country == "":
             st.error("Please fill in Project Name, Client Company Name, and Country Territory.")
         elif country_selection == "Other" and not matched_country and len(custom_cc) != 2:
