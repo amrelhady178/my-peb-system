@@ -1,17 +1,15 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
-import json
 from datetime import datetime
 
-# --- Page Config ---
-st.set_page_config(page_title="PEB Management System", layout="wide")
+# --- إعدادات الصفحة ---
+st.set_page_config(page_title="PEB Management System", layout="wide", initial_sidebar_state="collapsed")
 
-# --- Database Setup ---
+# --- قاعدة البيانات ---
 def create_db():
     conn = sqlite3.connect('peb_system.db')
     c = conn.cursor()
-    # Create main quotations table
     c.execute('''CREATE TABLE IF NOT EXISTS quotations 
                  (quotation_no TEXT PRIMARY KEY, quote_date TEXT, country TEXT, 
                   sales_rep TEXT, project_name TEXT, location TEXT, buildings INTEGER, 
@@ -25,7 +23,7 @@ def create_db():
 
 create_db()
 
-# --- Helpers ---
+# --- دوال مساعدة ---
 countries_map = {
     "Egypt": "EG", "Saudi Arabia": "SA", "Libya": "LY", "United Arab Emirates": "AE", 
     "Qatar": "QA", "Kuwait": "KW", "Oman": "OM", "Jordan": "JO", "Iraq": "IQ", "Sudan": "SD"
@@ -41,7 +39,6 @@ def get_next_serial():
     max_seq = 0
     for r in records:
         try:
-            # Extract XXX from CC-XXX-YYYY
             seq = int(r[0].split('-')[1])
             if seq > max_seq:
                 max_seq = seq
@@ -49,7 +46,7 @@ def get_next_serial():
             pass
     return max_seq + 1
 
-# --- Login System ---
+# --- نظام تسجيل الدخول ---
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
 
@@ -70,20 +67,31 @@ if not st.session_state.logged_in:
     login_screen()
     st.stop()
 
-# --- Sidebar Menu ---
-st.sidebar.title(f"User: {st.session_state.username}")
-menu = ["Quotation Log", "Jobs", "Collections", "KPIs", "Reports"]
-choice = st.sidebar.selectbox("Main Menu", menu)
+# --- القائمة الجانبية (لخروج المستخدم فقط) ---
+st.sidebar.title(f"👤 {st.session_state.username}")
+if st.sidebar.button("Logout"):
+    st.session_state.logged_in = False
+    st.rerun()
 
-# --- 1. Quotation Log Page ---
-if choice == "Quotation Log":
+# ==========================================
+# --- واجهة البرنامج (Tabs في منتصف الشاشة) ---
+# ==========================================
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "📝 Create a Quote", 
+    "📋 Quotation Log", 
+    "🏗️ Jobs", 
+    "💰 Collections", 
+    "📊 KPIs & Reports"
+])
+
+# --- الشاشة الأولى: Create a Quote ---
+with tab1:
     st.header("📝 Create New Quotation")
     
-    # Generate Serial Preview
     current_year = datetime.now().year
     next_seq = get_next_serial()
     
-    with st.form("quotation_form"):
+    with st.form("quotation_form", clear_on_submit=True):
         col1, col2, col3 = st.columns(3)
         
         with col1:
@@ -101,14 +109,12 @@ if choice == "Quotation Log":
             pricing_base = st.selectbox("Pricing Base", ["Re-Measurable", "Lump-sum"])
             steel_weight = st.number_input("Steel Weight (MT)", min_value=0.0)
 
-        # Show dynamic quotation number based on selection
         cc = countries_map[country]
         quotation_no = f"{cc}-{next_seq:03d}-{current_year}"
         st.info(f"**Generated Quotation Number:** {quotation_no}")
 
         st.divider()
         
-        # Client & Consultant Info
         c1, c2 = st.columns(2)
         with c1:
             st.subheader("🏢 Client Info")
@@ -121,69 +127,4 @@ if choice == "Quotation Log":
             
         with c2:
             st.subheader("👔 Consultant Info")
-            consultant_office = st.text_input("Consultant Office Name")
-            consultant_contact = st.text_input("Consultant Contact Person")
-            consultant_mobile = st.text_input("Consultant Mobile")
-            consultant_email = st.text_input("Consultant Email")
-            consultant_address = st.text_area("Consultant Office Address")
-
-        st.divider()
-        
-        # Dynamic Items Table
-        st.subheader("🛠️ Additional Items")
-        item_options = ["Single Skin", "Sandwich Panel", "Standing Seam", "Rain Gutter", "Skylight", 
-                        "Wall Light", "Grating", "Chequered Plate", "Metal Decking", "Lifeline", "Ridge Panel", "Other (Add Manual)"]
-        
-        # Create an empty dataframe for the data editor
-        df_items = pd.DataFrame(columns=["Item", "Description", "Unit", "QTY", "Unit Price"])
-        
-        st.write("Add your items below (Total Value is calculated automatically later):")
-        edited_items = st.data_editor(
-            df_items,
-            num_rows="dynamic",
-            column_config={
-                "Item": st.column_config.SelectboxColumn("Item", options=item_options, required=True),
-                "QTY": st.column_config.NumberColumn("QTY", min_value=0.0),
-                "Unit Price": st.column_config.NumberColumn("Unit Price", min_value=0.0)
-            },
-            use_container_width=True
-        )
-
-        st.divider()
-        
-        # Status
-        status = st.selectbox("Quotation Status", ["Under Study", "Signed", "Hold", "Rejected", "Lost"])
-        
-        submit = st.form_submit_button("Save Quotation")
-
-        if submit:
-            if project_name == "" or client_company == "":
-                st.error("Please fill in Project Name and Client Company Name.")
-            else:
-                # Calculate totals and convert items to JSON for storage
-                edited_items['Total Value'] = edited_items['QTY'] * edited_items['Unit Price']
-                items_json = edited_items.to_json(orient='records')
-                
-                # Save to Database
-                conn = sqlite3.connect('peb_system.db')
-                c = conn.cursor()
-                try:
-                    c.execute('''INSERT INTO quotations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-                              (quotation_no, str(quote_date), country, sales_rep, project_name, location, 
-                               buildings, scope, client_type, client_company, client_contact, client_mobile, 
-                               client_email, client_address, consultant_office, consultant_contact, 
-                               consultant_mobile, consultant_email, consultant_address, pricing_base, 
-                               steel_weight, items_json, status))
-                    conn.commit()
-                    st.success(f"✅ Quotation {quotation_no} saved successfully!")
-                except sqlite3.IntegrityError:
-                    st.error("A quotation with this number already exists. Please try saving again.")
-                conn.close()
-
-# Temporary placeholders for other pages
-elif choice in ["Jobs", "Collections", "KPIs", "Reports"]:
-    st.info(f"🔨 {choice} Module is under development.")
-
-if st.sidebar.button("Logout"):
-    st.session_state.logged_in = False
-    st.rerun()
+            consultant_office = st.text_input("Consultant
