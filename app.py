@@ -31,10 +31,22 @@ def create_db():
 
 create_db()
 
-# --- دوال مساعدة ---
+# --- خريطة الدول (الشرق الأوسط وأفريقيا) ---
 countries_map = {
-    "Egypt": "EG", "Saudi Arabia": "SA", "Libya": "LY", "United Arab Emirates": "AE", 
-    "Qatar": "QA", "Kuwait": "KW", "Oman": "OM", "Jordan": "JO", "Iraq": "IQ", "Sudan": "SD"
+    "Algeria": "DZ", "Angola": "AO", "Bahrain": "BH", "Botswana": "BW", "Burkina Faso": "BF",
+    "Burundi": "BI", "Cameroon": "CM", "Central African Republic": "CF", "Chad": "TD",
+    "Democratic Republic of the Congo": "CD", "Djibouti": "DJ", "Egypt": "EG",
+    "Equatorial Guinea": "GQ", "Eritrea": "ER", "Eswatini": "SZ", "Ethiopia": "ET",
+    "Gabon": "GA", "Gambia": "GM", "Ghana": "GH", "Guinea": "GN", "Guinea-Bissau": "GW",
+    "Iraq": "IQ", "Ivory Coast": "CI", "Jordan": "JO", "Kenya": "KE", "Kuwait": "KW",
+    "Lebanon": "LB", "Lesotho": "LS", "Liberia": "LR", "Libya": "LY", "Madagascar": "MG",
+    "Malawi": "MW", "Mali": "ML", "Mauritania": "MR", "Mauritius": "MU", "Morocco": "MA",
+    "Mozambique": "MZ", "Namibia": "NA", "Niger": "NE", "Nigeria": "NG", "Oman": "OM",
+    "Palestine": "PS", "Qatar": "QA", "Republic of the Congo": "CG", "Rwanda": "RW",
+    "Sao Tome and Principe": "ST", "Saudi Arabia": "SA", "Senegal": "SN", "Seychelles": "SC",
+    "Sierra Leone": "SL", "Somalia": "SO", "South Africa": "ZA", "Sudan": "SD", "Syria": "SY",
+    "Tanzania": "TZ", "Togo": "TG", "Tunisia": "TN", "Uganda": "UG", "United Arab Emirates": "AE",
+    "Yemen": "YE", "Zambia": "ZM", "Zimbabwe": "ZW"
 }
 
 def get_next_serial():
@@ -159,8 +171,31 @@ with tab1:
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        country = st.selectbox("Country Territory", list(countries_map.keys()), 
-                               index=list(countries_map.keys()).index(get_val('country', "Egypt")) if is_revision else 0)
+        # إعداد قائمة الدول وإضافة Other
+        country_list = sorted(list(countries_map.keys()))
+        db_country = get_val('country', "Egypt")
+        
+        # تحديد الاختيار الافتراضي (لو بيعمل تعديل ولقى البلد مش في القائمة هيختار Other أوتوماتيك)
+        if is_revision and db_country not in country_list and db_country != "":
+            default_index = len(country_list) # Index of "Other"
+        else:
+            default_index = country_list.index(db_country) if db_country in country_list else country_list.index("Egypt")
+            
+        country_selection = st.selectbox("Country Territory", country_list + ["Other"], index=default_index)
+        
+        # لو اختار Other نظهر خانات الكتابة
+        if country_selection == "Other":
+            sc_c1, sc_c2 = st.columns([2, 1])
+            with sc_c1:
+                final_country = st.text_input("Country Name", value=db_country if (is_revision and db_country not in country_list) else "")
+            with sc_c2:
+                default_cc = q_data['quotation_no'].split('-')[0] if (is_revision and q_data.get('quotation_no')) else ""
+                custom_cc = st.text_input("Code", max_chars=2, value=default_cc).upper()
+            cc = custom_cc if len(custom_cc) == 2 else "XX"
+        else:
+            final_country = country_selection
+            cc = countries_map[country_selection]
+
         try: default_date = datetime.strptime(get_val('quote_date', str(datetime.now().date())), '%Y-%m-%d').date()
         except: default_date = datetime.now().date()
         quote_date = st.date_input("Entry Date", value=default_date)
@@ -189,7 +224,7 @@ with tab1:
             except: steel_amount = 0.0
 
     if is_revision: quotation_no = q_data['quotation_no']
-    else: quotation_no = f"{countries_map[country]}-{get_next_serial():03d}-{current_year}"
+    else: quotation_no = f"{cc}-{get_next_serial():03d}-{current_year}"
     
     st.info(f"**Quotation Number:** {quotation_no}")
     st.divider()
@@ -270,8 +305,11 @@ with tab1:
     submit = st.button(submit_btn_text, type="primary", use_container_width=True)
 
     if submit:
-        if project_name == "" or client_company == "":
-            st.error("Please fill in Project Name and Client Company Name.")
+        # التحقق من أن المستخدم أدخل اسم البلد إذا اختار Other
+        if project_name == "" or client_company == "" or final_country == "":
+            st.error("Please fill in Project Name, Client Company Name, and Country Territory.")
+        elif country_selection == "Other" and len(custom_cc) != 2:
+            st.error("Please enter exactly 2 letters for the Custom Country Code.")
         else:
             conn = sqlite3.connect('peb_system.db')
             c = conn.cursor()
@@ -283,7 +321,7 @@ with tab1:
                              consultant_mobile=?, consultant_email=?, consultant_address=?, pricing_base=?, 
                              steel_weight=?, steel_amount=?, total_value=?, items_data=?, status=?
                              WHERE quotation_no=?''',
-                          (str(quote_date), country, project_name, location, buildings, scope, client_type, 
+                          (str(quote_date), final_country, project_name, location, buildings, scope, client_type, 
                            client_company, client_contact, client_mobile, client_email, client_address, 
                            consultant_office, consultant_contact, consultant_mobile, consultant_email, 
                            consultant_address, pricing_base, steel_weight, steel_amount, total_val, items_json, status, quotation_no))
@@ -291,7 +329,7 @@ with tab1:
             else:
                 try:
                     c.execute('''INSERT INTO quotations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-                              (quotation_no, str(quote_date), country, sales_rep, project_name, location, buildings, 
+                              (quotation_no, str(quote_date), final_country, sales_rep, project_name, location, buildings, 
                                scope, client_type, client_company, client_contact, client_mobile, client_email, 
                                client_address, consultant_office, consultant_contact, consultant_mobile, consultant_email, 
                                consultant_address, pricing_base, steel_weight, steel_amount, total_val, items_json, status))
@@ -307,7 +345,6 @@ with tab1:
 with tab2:
     st.header("📋 Quotation Log")
     conn = sqlite3.connect('peb_system.db')
-    # نقل الـ Status لتكون آخر خانة
     df_log = pd.read_sql_query('''
         SELECT quotation_no as "Quote No.", project_name as "Project Name", client_company as "Client Name", 
                sales_rep as "Sales Name", quote_date as "Entry Date", pricing_base as "Pricing Bases",
@@ -355,7 +392,6 @@ if is_admin:
         
         conn = sqlite3.connect('peb_system.db')
         
-        # استخراج بيانات العملاء
         df_clients = pd.read_sql_query('''
             SELECT DISTINCT client_contact as "Contact Name", client_company as "Company / Office",
                    client_mobile as "Mobile", client_email as "Email", client_address as "Address",
@@ -363,7 +399,6 @@ if is_admin:
             FROM quotations WHERE client_company != ''
         ''', conn)
         
-        # استخراج بيانات الاستشاريين
         df_consultants = pd.read_sql_query('''
             SELECT DISTINCT consultant_contact as "Contact Name", consultant_office as "Company / Office",
                    consultant_mobile as "Mobile", consultant_email as "Email", consultant_address as "Address",
@@ -373,13 +408,10 @@ if is_admin:
         
         conn.close()
         
-        # دمج البيانات وإزالة التكرار
         if not df_clients.empty or not df_consultants.empty:
             df_prospects = pd.concat([df_clients, df_consultants], ignore_index=True)
-            # مسح التكرار لو نفس الشركة ونفس الشخص متسجلين في كذا عرض سعر
             df_prospects = df_prospects.drop_duplicates(subset=["Company / Office", "Contact Name"])
             
-            # إضافة ألوان للتفريق بين العميل والاستشاري
             def style_type(val):
                 if val == 'Client': return 'background-color: #17a2b8; color: white'
                 if val == 'Consultant': return 'background-color: #6c757d; color: white'
