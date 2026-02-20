@@ -101,6 +101,13 @@ with tab1:
     q_data = {}
     is_revision = False
 
+    # مسح الداتا المؤقتة لو غيرنا وضع العمل عشان الجدول ينضف
+    if st.session_state.get('last_mode') != mode:
+        st.session_state['last_mode'] = mode
+        if 'current_items_df' in st.session_state:
+            del st.session_state['current_items_df']
+
+    selected_q = None
     if mode == "Revise Existing Quotation":
         is_revision = True
         conn = sqlite3.connect('peb_system.db')
@@ -109,6 +116,13 @@ with tab1:
         
         if not df_quotes.empty:
             selected_q = st.selectbox("Select Quotation to Revise", df_quotes['quotation_no'])
+            
+            # لو اخترنا عرض جديد للتعديل، نمسح الداتا المؤقتة
+            if st.session_state.get('last_q') != selected_q:
+                st.session_state['last_q'] = selected_q
+                if 'current_items_df' in st.session_state:
+                    del st.session_state['current_items_df']
+
             if selected_q:
                 conn = sqlite3.connect('peb_system.db')
                 c = conn.cursor()
@@ -121,13 +135,13 @@ with tab1:
         else:
             st.warning("No quotations available to revise.")
             st.stop()
+    else:
+        st.session_state['last_q'] = None
     
     current_year = datetime.now().year
     
     def get_val(key, default):
         return q_data.get(key, default) if is_revision else default
-
-    # --- تم إزالة الـ Form لكي يصبح التحديث لحظياً ---
     
     col1, col2, col3 = st.columns(3)
     
@@ -153,9 +167,17 @@ with tab1:
                                     index=["Re-Measurable", "Lump-sum"].index(get_val('pricing_base', "Re-Measurable")) if is_revision else 0)
         
         sc_1, sc_2 = st.columns(2)
-        # --- إضافة step للكسور العشرية ---
-        with sc_1: steel_weight = st.number_input("Steel Weight (MT)", min_value=0.0, value=float(get_val('steel_weight', 0.0)), format="%.3f", step=0.001)
-        with sc_2: steel_amount = st.number_input("Steel Amount", min_value=0.0, value=float(get_val('steel_amount', 0.0)), format="%.2f", step=0.01)
+        
+        # --- التعديل الجذري لكتابة الأرقام العشرية بكل حرية ---
+        with sc_1: 
+            sw_in = st.text_input("Steel Weight (MT)", value=str(get_val('steel_weight', "0.0")))
+            try: steel_weight = float(sw_in.replace(',', ''))
+            except: steel_weight = 0.0
+            
+        with sc_2: 
+            sa_in = st.text_input("Steel Amount (EGP)", value=str(get_val('steel_amount', "0.0")))
+            try: steel_amount = float(sa_in.replace(',', ''))
+            except: steel_amount = 0.0
 
     if is_revision:
         quotation_no = q_data['quotation_no']
@@ -192,48 +214,52 @@ with tab1:
     item_options = ["Single Skin", "Sandwich Panel", "Standing Seam", "Rain Gutter", "Skylight", 
                     "Wall Light", "Grating", "Chequered Plate", "Metal Decking", "Lifeline", "Ridge Panel", "Other"]
     
-    default_cols = ["Item", "Description", "Unit", "QTY", "Unit Price"]
-    df_items = pd.DataFrame(columns=default_cols)
-
-    if is_revision and q_data.get('items_data'):
-        try:
-            parsed_data = json.loads(q_data['items_data'])
-            if parsed_data:
-                df_items = pd.DataFrame(parsed_data)
-                for col in default_cols:
-                    if col not in df_items.columns:
-                        df_items[col] = 0.0
-        except Exception as e:
-            pass
+    default_cols = ["Item", "Description", "Unit", "QTY", "Unit Price", "Item Value"]
     
-    st.markdown("*Edit quantities and rates below. The Live Totals will update instantly when you click outside the cell.*")
+    # --- التحديث الصامت للجدول عشان يشتغل زي الإكسيل ---
+    if 'current_items_df' not in st.session_state:
+        if is_revision and q_data.get('items_data'):
+            try:
+                parsed_data = json.loads(q_data['items_data'])
+                if parsed_data:
+                    df = pd.DataFrame(parsed_data)
+                    for col in default_cols:
+                        if col not in df.columns: df[col] = 0.0
+                    st.session_state['current_items_df'] = df
+                else:
+                    st.session_state['current_items_df'] = pd.DataFrame(columns=default_cols)
+            except:
+                st.session_state['current_items_df'] = pd.DataFrame(columns=default_cols)
+        else:
+            st.session_state['current_items_df'] = pd.DataFrame(columns=default_cols)
+
+    st.markdown("*Note: Press **Enter** or click outside the cell after typing to instantly update the 'Item Value'.*")
+    
     edited_items = st.data_editor(
-        df_items,
+        st.session_state['current_items_df'],
         num_rows="dynamic",
         column_config={
             "Item": st.column_config.SelectboxColumn("Item", options=item_options, required=True),
-            "QTY": st.column_config.NumberColumn("QTY", min_value=0.0, format="%.2f", step=0.01),
-            "Unit Price": st.column_config.NumberColumn("Unit Price (Rate)", min_value=0.0, format="%.2f", step=0.01)
+            "QTY": st.column_config.NumberColumn("QTY", min_value=0.0, format="%.2f"),
+            "Unit Price": st.column_config.NumberColumn("Unit Price (Rate)", min_value=0.0, format="%.2f"),
+            "Item Value": st.column_config.NumberColumn("Item Value (Auto)", disabled=True, format="%.2f")
         },
         use_container_width=True
     )
 
-    # ==========================================
-    # --- حساب الإجماليات بشكل حي ومباشر ---
-    # ==========================================
-    if 'QTY' not in edited_items.columns: edited_items['QTY'] = 0.0
-    if 'Unit Price' not in edited_items.columns: edited_items['Unit Price'] = 0.0
-    
+    # حساب الـ Item Value برمجياً
     edited_items['QTY'] = pd.to_numeric(edited_items['QTY'], errors='coerce').fillna(0)
     edited_items['Unit Price'] = pd.to_numeric(edited_items['Unit Price'], errors='coerce').fillna(0)
-    
     edited_items['Item Value'] = edited_items['QTY'] * edited_items['Unit Price']
+    
+    # تحديث الداتا المؤقتة عشان تظهر النتيجة في الشاشة فوراً
+    st.session_state['current_items_df'] = edited_items
     items_json = edited_items.to_json(orient='records')
     
     total_items_val = edited_items['Item Value'].sum()
     total_val = float(steel_amount) + float(total_items_val)
 
-    # عرض النتيجة فوراً
+    # عرض الإجمالي الكلي الحي
     st.success(f"### 💰 Live Grand Total: {total_val:,.2f} EGP")
     st.write(f"*(Steel: {steel_amount:,.2f} EGP + Additional Items: {total_items_val:,.2f} EGP)*")
 
@@ -244,7 +270,6 @@ with tab1:
     
     submit_btn_text = "Update Quotation" if is_revision else "Save New Quotation"
     
-    # الزرار الرئيسي للحفظ النهائي
     submit = st.button(submit_btn_text, type="primary", use_container_width=True)
 
     if submit:
