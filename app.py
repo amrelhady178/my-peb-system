@@ -96,11 +96,9 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 with tab1:
     st.header("📝 Quotation Workspace")
     
-    # اختيار وضع العمل (جديد أم تعديل)
     mode = st.radio("Select Action:", ["Create New Quotation", "Revise Existing Quotation"], horizontal=True)
     st.divider()
 
-    # تهيئة المتغيرات الأساسية
     q_data = {}
     is_revision = False
 
@@ -125,7 +123,6 @@ with tab1:
             st.warning("No quotations available to revise.")
             st.stop()
     
-    # إعداد البيانات الافتراضية للـ Form
     current_year = datetime.now().year
     
     def get_val(key, default):
@@ -138,7 +135,6 @@ with tab1:
             country = st.selectbox("Country Territory", list(countries_map.keys()), 
                                    index=list(countries_map.keys()).index(get_val('country', "Egypt")) if is_revision else 0)
             
-            # معالجة التاريخ
             try: default_date = datetime.strptime(get_val('quote_date', str(datetime.now().date())), '%Y-%m-%d').date()
             except: default_date = datetime.now().date()
             quote_date = st.date_input("Entry Date", value=default_date)
@@ -156,12 +152,10 @@ with tab1:
             pricing_base = st.selectbox("Pricing Base", ["Re-Measurable", "Lump-sum"], 
                                         index=["Re-Measurable", "Lump-sum"].index(get_val('pricing_base', "Re-Measurable")) if is_revision else 0)
             
-            # الخانات الخاصة بالحديد
             sc_1, sc_2 = st.columns(2)
             with sc_1: steel_weight = st.number_input("Steel Weight (MT)", min_value=0.0, value=float(get_val('steel_weight', 0.0)))
             with sc_2: steel_amount = st.number_input("Steel Amount (EGP)", min_value=0.0, value=float(get_val('steel_amount', 0.0)))
 
-        # تحديد رقم العرض
         if is_revision:
             quotation_no = q_data['quotation_no']
         else:
@@ -197,11 +191,21 @@ with tab1:
         item_options = ["Single Skin", "Sandwich Panel", "Standing Seam", "Rain Gutter", "Skylight", 
                         "Wall Light", "Grating", "Chequered Plate", "Metal Decking", "Lifeline", "Ridge Panel", "Other"]
         
-        # تجهيز جدول الداتا
+        # --- تحديث الحماية للـ Data Editor ---
+        default_cols = ["Item", "Description", "Unit", "QTY", "Unit Price"]
+        df_items = pd.DataFrame(columns=default_cols)
+
         if is_revision and q_data.get('items_data'):
-            df_items = pd.read_json(q_data['items_data'])
-        else:
-            df_items = pd.DataFrame(columns=["Item", "Description", "Unit", "QTY", "Unit Price"])
+            try:
+                parsed_data = json.loads(q_data['items_data'])
+                if parsed_data:  # لو الجدول مكانش فاضي
+                    df_items = pd.DataFrame(parsed_data)
+                    # التأكد من وجود العواميد الأساسية حتى لو مسحتها بالغلط
+                    for col in default_cols:
+                        if col not in df_items.columns:
+                            df_items[col] = 0.0
+            except Exception as e:
+                pass
         
         st.markdown("*To delete a row: Check the box on the far left of the row and press **Delete** on your keyboard.*")
         edited_items = st.data_editor(
@@ -227,10 +231,17 @@ with tab1:
             if project_name == "" or client_company == "":
                 st.error("Please fill in Project Name and Client Company Name.")
             else:
-                # الحسابات الجديدة
+                # --- تنظيف الداتا قبل الحسابات لتفادي الـ KeyError نهائياً ---
+                if 'QTY' not in edited_items.columns: edited_items['QTY'] = 0.0
+                if 'Unit Price' not in edited_items.columns: edited_items['Unit Price'] = 0.0
+                
+                edited_items['QTY'] = pd.to_numeric(edited_items['QTY'], errors='coerce').fillna(0)
+                edited_items['Unit Price'] = pd.to_numeric(edited_items['Unit Price'], errors='coerce').fillna(0)
+                
                 edited_items['Others Amount'] = edited_items['QTY'] * edited_items['Unit Price']
                 items_json = edited_items.to_json(orient='records')
-                total_val = steel_amount + edited_items['Others Amount'].sum()
+                
+                total_val = float(steel_amount) + float(edited_items['Others Amount'].sum())
                 
                 conn = sqlite3.connect('peb_system.db')
                 c = conn.cursor()
@@ -271,7 +282,6 @@ with tab2:
     st.header("📋 Quotation Log")
     
     conn = sqlite3.connect('peb_system.db')
-    # جلب الخانات بالترتيب المطلوب
     df_log = pd.read_sql_query('''
         SELECT quotation_no as "Quote No.", 
                project_name as "Project Name", 
@@ -288,7 +298,6 @@ with tab2:
     conn.close()
     
     if not df_log.empty:
-        # كود تلوين الحالات
         def style_status(val):
             if val == 'Signed': return 'background-color: #28a745; color: white'
             if val == 'Lost': return 'background-color: #dc3545; color: white'
