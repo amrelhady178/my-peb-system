@@ -76,9 +76,19 @@ if st.sidebar.button("Logout"):
     st.session_state.logged_in = False
     st.rerun()
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+# ==========================================
+# --- نظام الصلاحيات (Admin Access) ---
+# ==========================================
+is_admin = (st.session_state.username == "admin")
+
+tabs_titles = [
     "📝 Quotation Workspace", "📋 Quotation Log", "🏗️ Jobs", "💰 Collections", "📊 KPIs & Reports"
-])
+]
+if is_admin:
+    tabs_titles.append("🕵️ Prospect List")
+
+tabs = st.tabs(tabs_titles)
+tab1, tab2, tab3, tab4, tab5 = tabs[0], tabs[1], tabs[2], tabs[3], tabs[4]
 
 # ==========================================
 # --- الشاشة الأولى: Quotation Workspace ---
@@ -93,7 +103,6 @@ with tab1:
     is_revision = False
     selected_q = None
 
-    # دالة لتنسيق الأرقام بفواصل الألوف بدون كسور عشرية للفلوس والوزن
     def format_money():
         try:
             val_a = str(st.session_state.sa_input).replace(',', '')
@@ -101,7 +110,6 @@ with tab1:
         except: pass
         try:
             val_w = str(st.session_state.sw_input).replace(',', '')
-            # تم تعديلها هنا لـ 0f عشان نشيل الكسور العشرية من الوزن
             if val_w: st.session_state.sw_input = f"{float(val_w):,.0f}"
         except: pass
 
@@ -124,7 +132,6 @@ with tab1:
                 conn.close()
                 
                 st.session_state['sa_input'] = f"{float(q_data.get('steel_amount', 0)):,.0f}"
-                # تم التعديل هنا لعدم عرض كسور عند التعديل
                 st.session_state['sw_input'] = f"{float(q_data.get('steel_weight', 0)):,.0f}"
                 if 'current_items_df' in st.session_state: del st.session_state['current_items_df']
             else:
@@ -142,7 +149,7 @@ with tab1:
         if st.session_state.get('last_mode') != mode:
             st.session_state['last_mode'] = mode
             st.session_state['sa_input'] = "0"
-            st.session_state['sw_input'] = "0"  # تم التعديل هنا لتبدأ بصفر صحيح
+            st.session_state['sw_input'] = "0"
             if 'current_items_df' in st.session_state: del st.session_state['current_items_df']
             st.session_state['last_q'] = None
     
@@ -300,14 +307,16 @@ with tab1:
 with tab2:
     st.header("📋 Quotation Log")
     conn = sqlite3.connect('peb_system.db')
+    # نقل الـ Status لتكون آخر خانة
     df_log = pd.read_sql_query('''
         SELECT quotation_no as "Quote No.", project_name as "Project Name", client_company as "Client Name", 
                sales_rep as "Sales Name", quote_date as "Entry Date", pricing_base as "Pricing Bases",
-               scope as "Scope of Work", status as "Status", 
+               scope as "Scope of Work", 
                steel_weight as "Steel Weight", 
                steel_amount as "Steel Amount",
                (total_value - steel_amount) as "Other Items Amount",
-               total_value as "Total Value"
+               total_value as "Total Value",
+               status as "Status"
         FROM quotations ORDER BY quotation_no DESC
     ''', conn)
     conn.close()
@@ -320,7 +329,6 @@ with tab2:
             if val == 'Rejected': return 'background-color: #add8e6; color: black'
             return ''
         
-        # تنسيق الوزن والفلوس عشان تظهر بدون كسور في الجدول
         df_log['Steel Weight'] = df_log['Steel Weight'].apply(lambda x: f"{x:,.0f}")
         df_log['Steel Amount'] = df_log['Steel Amount'].apply(lambda x: f"{x:,.0f}")
         df_log['Other Items Amount'] = df_log['Other Items Amount'].apply(lambda x: f"{x:,.0f}")
@@ -330,7 +338,54 @@ with tab2:
         st.dataframe(styled_df, use_container_width=True, hide_index=True)
     else: st.info("No quotations found yet.")
 
-# --- باقي الشاشات ---
+# ==========================================
+# --- الشاشات تحت الإنشاء ---
+# ==========================================
 with tab3: st.header("🏗️ Jobs"); st.info("Projects with 'Signed' status will automatically appear here.")
 with tab4: st.header("💰 Collections"); st.info("Payment tracking will be managed here.")
 with tab5: st.header("📊 KPIs & Reports"); st.info("Dashboards and data exports will be generated here.")
+
+# ==========================================
+# --- الشاشة السادسة: Prospect List (للـ Admin فقط) ---
+# ==========================================
+if is_admin:
+    with tabs[5]:
+        st.header("🕵️ Prospect List (Admin Dashboard)")
+        st.markdown("This list automatically extracts and organizes all client and consultant contacts from your quotations.")
+        
+        conn = sqlite3.connect('peb_system.db')
+        
+        # استخراج بيانات العملاء
+        df_clients = pd.read_sql_query('''
+            SELECT DISTINCT client_contact as "Contact Name", client_company as "Company / Office",
+                   client_mobile as "Mobile", client_email as "Email", client_address as "Address",
+                   'Client' as "Type"
+            FROM quotations WHERE client_company != ''
+        ''', conn)
+        
+        # استخراج بيانات الاستشاريين
+        df_consultants = pd.read_sql_query('''
+            SELECT DISTINCT consultant_contact as "Contact Name", consultant_office as "Company / Office",
+                   consultant_mobile as "Mobile", consultant_email as "Email", consultant_address as "Address",
+                   'Consultant' as "Type"
+            FROM quotations WHERE consultant_office != ''
+        ''', conn)
+        
+        conn.close()
+        
+        # دمج البيانات وإزالة التكرار
+        if not df_clients.empty or not df_consultants.empty:
+            df_prospects = pd.concat([df_clients, df_consultants], ignore_index=True)
+            # مسح التكرار لو نفس الشركة ونفس الشخص متسجلين في كذا عرض سعر
+            df_prospects = df_prospects.drop_duplicates(subset=["Company / Office", "Contact Name"])
+            
+            # إضافة ألوان للتفريق بين العميل والاستشاري
+            def style_type(val):
+                if val == 'Client': return 'background-color: #17a2b8; color: white'
+                if val == 'Consultant': return 'background-color: #6c757d; color: white'
+                return ''
+                
+            styled_prospects = df_prospects.style.map(style_type, subset=['Type'])
+            st.dataframe(styled_prospects, use_container_width=True, hide_index=True)
+        else:
+            st.info("No prospect data available yet. Start creating quotations to build your list.")
