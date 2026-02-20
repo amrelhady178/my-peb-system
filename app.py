@@ -95,36 +95,4 @@ with tab1:
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            country = st.selectbox("Country Territory", list(countries_map.keys()))
-            quote_date = st.date_input("Quote Date")
-            sales_rep = st.text_input("Sales Responsible", value=st.session_state.username, disabled=True)
-            
-        with col2:
-            project_name = st.text_input("Project Name")
-            location = st.text_input("Project Location")
-            buildings = st.number_input("Number of Buildings", min_value=1, step=1)
-            
-        with col3:
-            scope = st.selectbox("Scope of Work", ["Supply Only", "Supply & Erection", "Ex-Work"])
-            pricing_base = st.selectbox("Pricing Base", ["Re-Measurable", "Lump-sum"])
-            steel_weight = st.number_input("Steel Weight (MT)", min_value=0.0)
-
-        cc = countries_map[country]
-        quotation_no = f"{cc}-{next_seq:03d}-{current_year}"
-        st.info(f"**Generated Quotation Number:** {quotation_no}")
-
-        st.divider()
-        
-        c1, c2 = st.columns(2)
-        with c1:
-            st.subheader("🏢 Client Info")
-            client_type = st.selectbox("Client Type", ["Enduser", "Contractor", "Consultant"])
-            client_company = st.text_input("Company Name")
-            client_contact = st.text_input("Client Contact Person")
-            client_mobile = st.text_input("Client Mobile")
-            client_email = st.text_input("Client Email")
-            client_address = st.text_area("Client Company Address")
-            
-        with c2:
-            st.subheader("👔 Consultant Info")
-            consultant_office = st.text_input("Consultant
+            country = st.selectbox("Country Territory", list(countries_map.keys
