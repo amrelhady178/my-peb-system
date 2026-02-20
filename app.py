@@ -93,7 +93,7 @@ with tab1:
     is_revision = False
     selected_q = None
 
-    # دالة لتنسيق الأرقام بفواصل الألوف بدون كسور عشرية للفلوس
+    # دالة لتنسيق الأرقام بفواصل الألوف بدون كسور عشرية للفلوس والوزن
     def format_money():
         try:
             val_a = str(st.session_state.sa_input).replace(',', '')
@@ -101,7 +101,8 @@ with tab1:
         except: pass
         try:
             val_w = str(st.session_state.sw_input).replace(',', '')
-            if val_w: st.session_state.sw_input = f"{float(val_w):,.3f}"
+            # تم تعديلها هنا لـ 0f عشان نشيل الكسور العشرية من الوزن
+            if val_w: st.session_state.sw_input = f"{float(val_w):,.0f}"
         except: pass
 
     if mode == "Revise Existing Quotation":
@@ -123,7 +124,8 @@ with tab1:
                 conn.close()
                 
                 st.session_state['sa_input'] = f"{float(q_data.get('steel_amount', 0)):,.0f}"
-                st.session_state['sw_input'] = f"{float(q_data.get('steel_weight', 0)):,.3f}"
+                # تم التعديل هنا لعدم عرض كسور عند التعديل
+                st.session_state['sw_input'] = f"{float(q_data.get('steel_weight', 0)):,.0f}"
                 if 'current_items_df' in st.session_state: del st.session_state['current_items_df']
             else:
                 conn = sqlite3.connect('peb_system.db')
@@ -140,7 +142,7 @@ with tab1:
         if st.session_state.get('last_mode') != mode:
             st.session_state['last_mode'] = mode
             st.session_state['sa_input'] = "0"
-            st.session_state['sw_input'] = "0.000"
+            st.session_state['sw_input'] = "0"  # تم التعديل هنا لتبدأ بصفر صحيح
             if 'current_items_df' in st.session_state: del st.session_state['current_items_df']
             st.session_state['last_q'] = None
     
@@ -249,7 +251,6 @@ with tab1:
     items_json = edited_items.to_json(orient='records')
     total_val = float(steel_amount) + float(new_total_val)
 
-    # عرض النتيجة بدون كسور عشرية للفلوس
     st.success(f"### 💰 Live Grand Total: {total_val:,.0f} EGP")
     st.write(f"*(Steel: {steel_amount:,.0f} EGP + Other Items: {new_total_val:,.0f} EGP)*")
 
@@ -299,7 +300,6 @@ with tab1:
 with tab2:
     st.header("📋 Quotation Log")
     conn = sqlite3.connect('peb_system.db')
-    # جلب الخانات الجديدة بدون الكميات
     df_log = pd.read_sql_query('''
         SELECT quotation_no as "Quote No.", project_name as "Project Name", client_company as "Client Name", 
                sales_rep as "Sales Name", quote_date as "Entry Date", pricing_base as "Pricing Bases",
@@ -320,8 +320,8 @@ with tab2:
             if val == 'Rejected': return 'background-color: #add8e6; color: black'
             return ''
         
-        # تنسيق الفلوس عشان تظهر بفاصلة الألوف وبدون كسور، والحديد بـ 3 كسور
-        df_log['Steel Weight'] = df_log['Steel Weight'].apply(lambda x: f"{x:,.3f}")
+        # تنسيق الوزن والفلوس عشان تظهر بدون كسور في الجدول
+        df_log['Steel Weight'] = df_log['Steel Weight'].apply(lambda x: f"{x:,.0f}")
         df_log['Steel Amount'] = df_log['Steel Amount'].apply(lambda x: f"{x:,.0f}")
         df_log['Other Items Amount'] = df_log['Other Items Amount'].apply(lambda x: f"{x:,.0f}")
         df_log['Total Value'] = df_log['Total Value'].apply(lambda x: f"{x:,.0f}")
