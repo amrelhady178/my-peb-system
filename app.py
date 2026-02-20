@@ -93,18 +93,17 @@ with tab1:
     is_revision = False
     selected_q = None
 
-    # دالة لتنسيق الأرقام بفواصل الألوف أوتوماتيك
+    # دالة لتنسيق الأرقام بفواصل الألوف بدون كسور عشرية للفلوس
     def format_money():
         try:
             val_a = str(st.session_state.sa_input).replace(',', '')
-            if val_a: st.session_state.sa_input = f"{float(val_a):,.2f}"
+            if val_a: st.session_state.sa_input = f"{float(val_a):,.0f}"
         except: pass
         try:
             val_w = str(st.session_state.sw_input).replace(',', '')
             if val_w: st.session_state.sw_input = f"{float(val_w):,.3f}"
         except: pass
 
-    # ضبط الداتا المؤقتة عشان الفواصل تشتغل صح
     if mode == "Revise Existing Quotation":
         is_revision = True
         conn = sqlite3.connect('peb_system.db')
@@ -123,7 +122,7 @@ with tab1:
                 q_data = dict(zip(col_names, row))
                 conn.close()
                 
-                st.session_state['sa_input'] = f"{float(q_data.get('steel_amount', 0)):,.2f}"
+                st.session_state['sa_input'] = f"{float(q_data.get('steel_amount', 0)):,.0f}"
                 st.session_state['sw_input'] = f"{float(q_data.get('steel_weight', 0)):,.3f}"
                 if 'current_items_df' in st.session_state: del st.session_state['current_items_df']
             else:
@@ -140,7 +139,7 @@ with tab1:
     else:
         if st.session_state.get('last_mode') != mode:
             st.session_state['last_mode'] = mode
-            st.session_state['sa_input'] = "0.00"
+            st.session_state['sa_input'] = "0"
             st.session_state['sw_input'] = "0.000"
             if 'current_items_df' in st.session_state: del st.session_state['current_items_df']
             st.session_state['last_q'] = None
@@ -207,7 +206,7 @@ with tab1:
 
     st.divider()
     
-    st.subheader("🛠️ Additional Items")
+    st.subheader("🛠️ Other Items")
     item_options = ["Single Skin", "Sandwich Panel", "Standing Seam", "Rain Gutter", "Skylight", 
                     "Wall Light", "Grating", "Chequered Plate", "Metal Decking", "Lifeline", "Ridge Panel", "Other"]
     default_cols = ["Item", "Description", "Unit", "QTY", "Unit Price", "Item Value"]
@@ -225,19 +224,19 @@ with tab1:
 
     old_total_val = st.session_state['current_items_df']['Item Value'].sum() if not st.session_state['current_items_df'].empty else 0.0
 
+    st.markdown("*Note: Press **Enter** or click outside the cell after typing to instantly update the 'Item Value'.*")
     edited_items = st.data_editor(
         st.session_state['current_items_df'],
         num_rows="dynamic",
         column_config={
             "Item": st.column_config.SelectboxColumn("Item", options=item_options, required=True),
-            "QTY": st.column_config.NumberColumn("QTY", min_value=0.0, format="%.2f"),
-            "Unit Price": st.column_config.NumberColumn("Unit Price (Rate)", min_value=0.0, format="%.2f"),
-            "Item Value": st.column_config.NumberColumn("Item Value (Auto)", disabled=True, format="%.2f")
+            "QTY": st.column_config.NumberColumn("QTY", min_value=0.0),
+            "Unit Price": st.column_config.NumberColumn("Unit Price (Rate)", min_value=0.0),
+            "Item Value": st.column_config.NumberColumn("Item Value (Auto)", disabled=True)
         },
         use_container_width=True
     )
 
-    # --- حساب النتيجة وعمل تحديث صامت للجدول ---
     edited_items['QTY'] = pd.to_numeric(edited_items['QTY'], errors='coerce').fillna(0)
     edited_items['Unit Price'] = pd.to_numeric(edited_items['Unit Price'], errors='coerce').fillna(0)
     edited_items['Item Value'] = edited_items['QTY'] * edited_items['Unit Price']
@@ -245,15 +244,14 @@ with tab1:
     st.session_state['current_items_df'] = edited_items
     new_total_val = edited_items['Item Value'].sum()
     
-    # لو حصل تغيير في الحسابات، الجدول بيعمل Refresh لنفسه في لحظتها عشان يظهر الرقم
-    if abs(new_total_val - old_total_val) > 0.001:
-        st.rerun()
+    if abs(new_total_val - old_total_val) > 0.001: st.rerun()
 
     items_json = edited_items.to_json(orient='records')
     total_val = float(steel_amount) + float(new_total_val)
 
-    st.success(f"### 💰 Live Grand Total: {total_val:,.2f} EGP")
-    st.write(f"*(Steel: {steel_amount:,.2f} EGP + Additional Items: {new_total_val:,.2f} EGP)*")
+    # عرض النتيجة بدون كسور عشرية للفلوس
+    st.success(f"### 💰 Live Grand Total: {total_val:,.0f} EGP")
+    st.write(f"*(Steel: {steel_amount:,.0f} EGP + Other Items: {new_total_val:,.0f} EGP)*")
 
     st.divider()
     status_options = ["In Progress", "Signed", "Hold", "Rejected", "Lost"]
@@ -301,10 +299,15 @@ with tab1:
 with tab2:
     st.header("📋 Quotation Log")
     conn = sqlite3.connect('peb_system.db')
+    # جلب الخانات الجديدة بدون الكميات
     df_log = pd.read_sql_query('''
         SELECT quotation_no as "Quote No.", project_name as "Project Name", client_company as "Client Name", 
                sales_rep as "Sales Name", quote_date as "Entry Date", pricing_base as "Pricing Bases",
-               scope as "Scope of Work", status as "Status", total_value as "Total Value"
+               scope as "Scope of Work", status as "Status", 
+               steel_weight as "Steel Weight", 
+               steel_amount as "Steel Amount",
+               (total_value - steel_amount) as "Other Items Amount",
+               total_value as "Total Value"
         FROM quotations ORDER BY quotation_no DESC
     ''', conn)
     conn.close()
@@ -316,8 +319,15 @@ with tab2:
             if val == 'Hold': return 'background-color: #ffc107; color: black'
             if val == 'Rejected': return 'background-color: #add8e6; color: black'
             return ''
+        
+        # تنسيق الفلوس عشان تظهر بفاصلة الألوف وبدون كسور، والحديد بـ 3 كسور
+        df_log['Steel Weight'] = df_log['Steel Weight'].apply(lambda x: f"{x:,.3f}")
+        df_log['Steel Amount'] = df_log['Steel Amount'].apply(lambda x: f"{x:,.0f}")
+        df_log['Other Items Amount'] = df_log['Other Items Amount'].apply(lambda x: f"{x:,.0f}")
+        df_log['Total Value'] = df_log['Total Value'].apply(lambda x: f"{x:,.0f}")
+
         styled_df = df_log.style.map(style_status, subset=['Status'])
-        st.dataframe(styled_df, use_container_width=True, hide_index=True, column_config={"Total Value": st.column_config.NumberColumn(format="%.2f")})
+        st.dataframe(styled_df, use_container_width=True, hide_index=True)
     else: st.info("No quotations found yet.")
 
 # --- باقي الشاشات ---
