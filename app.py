@@ -32,8 +32,9 @@ def create_db():
 create_db()
 
 # --- خريطة الدول (الشرق الأوسط وأفريقيا) ---
+# تم تعديل الجزائر لتكون AL
 countries_map = {
-    "Algeria": "DZ", "Angola": "AO", "Bahrain": "BH", "Botswana": "BW", "Burkina Faso": "BF",
+    "Algeria": "AL", "Angola": "AO", "Bahrain": "BH", "Botswana": "BW", "Burkina Faso": "BF",
     "Burundi": "BI", "Cameroon": "CM", "Central African Republic": "CF", "Chad": "TD",
     "Democratic Republic of the Congo": "CD", "Djibouti": "DJ", "Egypt": "EG",
     "Equatorial Guinea": "GQ", "Eritrea": "ER", "Eswatini": "SZ", "Ethiopia": "ET",
@@ -171,11 +172,9 @@ with tab1:
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        # إعداد قائمة الدول وإضافة Other
         country_list = sorted(list(countries_map.keys()))
         db_country = get_val('country', "Egypt")
         
-        # تحديد الاختيار الافتراضي (لو بيعمل تعديل ولقى البلد مش في القائمة هيختار Other أوتوماتيك)
         if is_revision and db_country not in country_list and db_country != "":
             default_index = len(country_list) # Index of "Other"
         else:
@@ -183,15 +182,28 @@ with tab1:
             
         country_selection = st.selectbox("Country Territory", country_list + ["Other"], index=default_index)
         
-        # لو اختار Other نظهر خانات الكتابة
+        # --- التعديل الذكي لخانة Other ---
+        matched_country = None
         if country_selection == "Other":
             sc_c1, sc_c2 = st.columns([2, 1])
             with sc_c1:
-                final_country = st.text_input("Country Name", value=db_country if (is_revision and db_country not in country_list) else "")
+                final_country_input = st.text_input("Country Name", value=db_country if (is_revision and db_country not in country_list) else "")
+            
+            # البحث عن البلد المدخلة لمعرفة هل هي موجودة أصلاً؟
+            matched_country = next((k for k in countries_map.keys() if k.lower() == final_country_input.strip().lower()), None)
+            
             with sc_c2:
                 default_cc = q_data['quotation_no'].split('-')[0] if (is_revision and q_data.get('quotation_no')) else ""
-                custom_cc = st.text_input("Code", max_chars=2, value=default_cc).upper()
-            cc = custom_cc if len(custom_cc) == 2 else "XX"
+                
+                # لو البلد موجودة، يقفل الكود ويحطه أوتوماتيك
+                if matched_country:
+                    custom_cc = st.text_input("Code (Auto)", value=countries_map[matched_country], disabled=True)
+                    cc = countries_map[matched_country]
+                    final_country = matched_country
+                else:
+                    custom_cc = st.text_input("Code", max_chars=2, value=default_cc).upper()
+                    cc = custom_cc if len(custom_cc) == 2 else "XX"
+                    final_country = final_country_input
         else:
             final_country = country_selection
             cc = countries_map[country_selection]
@@ -305,10 +317,10 @@ with tab1:
     submit = st.button(submit_btn_text, type="primary", use_container_width=True)
 
     if submit:
-        # التحقق من أن المستخدم أدخل اسم البلد إذا اختار Other
+        # رسالة خطأ ذكية تمنعه لو مكملش الكود لبلد مش موجودة فعلاً
         if project_name == "" or client_company == "" or final_country == "":
             st.error("Please fill in Project Name, Client Company Name, and Country Territory.")
-        elif country_selection == "Other" and len(custom_cc) != 2:
+        elif country_selection == "Other" and not matched_country and len(custom_cc) != 2:
             st.error("Please enter exactly 2 letters for the Custom Country Code.")
         else:
             conn = sqlite3.connect('peb_system.db')
