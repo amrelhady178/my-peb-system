@@ -95,4 +95,122 @@ with tab1:
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            country = st.selectbox("Country Territory", list(countries_map.keys
+            country = st.selectbox("Country Territory", list(countries_map.keys()))
+            quote_date = st.date_input("Quote Date")
+            sales_rep = st.text_input("Sales Responsible", value=st.session_state.username, disabled=True)
+            
+        with col2:
+            project_name = st.text_input("Project Name")
+            location = st.text_input("Project Location")
+            buildings = st.number_input("Number of Buildings", min_value=1, step=1)
+            
+        with col3:
+            scope = st.selectbox("Scope of Work", ["Supply Only", "Supply & Erection", "Ex-Work"])
+            pricing_base = st.selectbox("Pricing Base", ["Re-Measurable", "Lump-sum"])
+            steel_weight = st.number_input("Steel Weight (MT)", min_value=0.0)
+
+        cc = countries_map[country]
+        quotation_no = f"{cc}-{next_seq:03d}-{current_year}"
+        st.info(f"**Generated Quotation Number:** {quotation_no}")
+
+        st.divider()
+        
+        c1, c2 = st.columns(2)
+        with c1:
+            st.subheader("🏢 Client Info")
+            client_type = st.selectbox("Client Type", ["Enduser", "Contractor", "Consultant"])
+            client_company = st.text_input("Company Name")
+            client_contact = st.text_input("Client Contact Person")
+            client_mobile = st.text_input("Client Mobile")
+            client_email = st.text_input("Client Email")
+            client_address = st.text_area("Client Company Address")
+            
+        with c2:
+            st.subheader("👔 Consultant Info")
+            consultant_office = st.text_input("Consultant Office Name")
+            consultant_contact = st.text_input("Consultant Contact Person")
+            consultant_mobile = st.text_input("Consultant Mobile")
+            consultant_email = st.text_input("Consultant Email")
+            consultant_address = st.text_area("Consultant Office Address")
+
+        st.divider()
+        
+        st.subheader("🛠️ Additional Items")
+        item_options = ["Single Skin", "Sandwich Panel", "Standing Seam", "Rain Gutter", "Skylight", 
+                        "Wall Light", "Grating", "Chequered Plate", "Metal Decking", "Lifeline", "Ridge Panel", "Other"]
+        
+        df_items = pd.DataFrame(columns=["Item", "Description", "Unit", "QTY", "Unit Price"])
+        
+        edited_items = st.data_editor(
+            df_items,
+            num_rows="dynamic",
+            column_config={
+                "Item": st.column_config.SelectboxColumn("Item", options=item_options, required=True),
+                "QTY": st.column_config.NumberColumn("QTY", min_value=0.0),
+                "Unit Price": st.column_config.NumberColumn("Unit Price", min_value=0.0)
+            },
+            use_container_width=True
+        )
+
+        st.divider()
+        status = st.selectbox("Quotation Status", ["Under Study", "Signed", "Hold", "Rejected", "Lost"])
+        
+        submit = st.form_submit_button("Save Quotation")
+
+        if submit:
+            if project_name == "" or client_company == "":
+                st.error("Please fill in Project Name and Client Company Name.")
+            else:
+                edited_items['Total Value'] = edited_items['QTY'] * edited_items['Unit Price']
+                items_json = edited_items.to_json(orient='records')
+                
+                conn = sqlite3.connect('peb_system.db')
+                c = conn.cursor()
+                try:
+                    c.execute('''INSERT INTO quotations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                              (quotation_no, str(quote_date), country, sales_rep, project_name, location, 
+                               buildings, scope, client_type, client_company, client_contact, client_mobile, 
+                               client_email, client_address, consultant_office, consultant_contact, 
+                               consultant_mobile, consultant_email, consultant_address, pricing_base, 
+                               steel_weight, items_json, status))
+                    conn.commit()
+                    st.success(f"✅ Quotation {quotation_no} saved successfully! Check the 'Quotation Log' tab.")
+                except sqlite3.IntegrityError:
+                    st.error("A quotation with this number already exists.")
+                conn.close()
+
+# --- الشاشة الثانية: Quotation Log ---
+with tab2:
+    st.header("📋 Quotation Log")
+    
+    conn = sqlite3.connect('peb_system.db')
+    df_log = pd.read_sql_query('''
+        SELECT quotation_no as "Quote No.", 
+               quote_date as "Date", 
+               project_name as "Project Name", 
+               client_company as "Client", 
+               sales_rep as "Sales Eng.", 
+               steel_weight as "Weight (MT)", 
+               status as "Status" 
+        FROM quotations 
+        ORDER BY quotation_no DESC
+    ''', conn)
+    conn.close()
+    
+    if not df_log.empty:
+        st.dataframe(df_log, use_container_width=True, hide_index=True)
+    else:
+        st.info("No quotations found yet. Please create a new quote.")
+
+# --- باقي الشاشات (مؤقتة لحين برمجتها) ---
+with tab3:
+    st.header("🏗️ Jobs")
+    st.info("Projects with 'Signed' status will automatically appear here.")
+
+with tab4:
+    st.header("💰 Collections")
+    st.info("Payment tracking will be managed here.")
+
+with tab5:
+    st.header("📊 KPIs & Reports")
+    st.info("Dashboards and data exports will be generated here.")
