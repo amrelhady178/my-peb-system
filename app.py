@@ -8,9 +8,10 @@ import os
 # ==========================================
 # --- إعدادات الصفحة والهوية البصرية ---
 # ==========================================
-st.set_page_config(page_title="Sales Bay", page_icon="🏗️", layout="wide", initial_sidebar_state="collapsed")
+# تم تغيير الأيقونة هنا لتأخذ صورة اللوجو
+st.set_page_config(page_title="Sales Bay", page_icon="logo.png", layout="wide", initial_sidebar_state="collapsed")
 
-# كود سري (CSS) لإخفاء علامات Streamlit بالكامل
+# كود إخفاء علامات Streamlit
 hide_streamlit_style = """
             <style>
             #MainMenu {visibility: hidden;}
@@ -76,22 +77,20 @@ def get_next_serial():
     return max_seq + 1
 
 # ==========================================
-# --- شاشة تسجيل الدخول (الاحترافية) ---
+# --- شاشة تسجيل الدخول ---
 # ==========================================
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 
 def login_screen():
-    # تظبيط مقاسات الشاشة عشان اللوجو يكون في النص
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.write("") # مسافة من فوق
         st.write("")
-        # محاولة عرض اللوجو لو موجود
+        st.write("")
         logo_path = "logo.png" if os.path.exists("logo.png") else ("logo.jpg" if os.path.exists("logo.jpg") else None)
         if logo_path:
             st.image(logo_path, use_container_width=True)
         else:
-            st.markdown("<h1 style='text-align: center;'>🏗️ Sales Bay</h1>", unsafe_allow_html=True)
+            st.markdown("<h1 style='text-align: center;'>Sales Bay</h1>", unsafe_allow_html=True)
         
         st.markdown("<h3 style='text-align: center; color: gray;'>Welcome Back</h3>", unsafe_allow_html=True)
         
@@ -111,8 +110,10 @@ if not st.session_state.logged_in:
     st.stop()
 
 # ==========================================
-# --- القائمة الجانبية للموقع من جوه ---
+# --- الواجهة الداخلية بعد تسجيل الدخول ---
 # ==========================================
+
+# القائمة الجانبية (Sidebar)
 logo_path = "logo.png" if os.path.exists("logo.png") else ("logo.jpg" if os.path.exists("logo.jpg") else None)
 if logo_path:
     st.sidebar.image(logo_path, use_container_width=True)
@@ -120,6 +121,18 @@ st.sidebar.title(f"👤 {st.session_state.username}")
 if st.sidebar.button("Logout", use_container_width=True):
     st.session_state.logged_in = False
     st.rerun()
+
+# اللوجو داخل الصفحات الرئيسية (فوق الـ Tabs)
+if logo_path:
+    c_logo, c_title = st.columns([1, 8])
+    with c_logo:
+        st.image(logo_path, width=80)
+    with c_title:
+        st.title("Sales Bay Workspace")
+else:
+    st.title("Sales Bay Workspace")
+
+st.divider()
 
 is_admin = (st.session_state.username == "admin")
 tabs_titles = ["📝 Quotation Workspace", "📋 Quotation Log", "🏗️ Jobs", "💰 Collections", "📊 KPIs & Reports"]
@@ -132,7 +145,6 @@ tab1, tab2, tab3, tab4, tab5 = tabs[0], tabs[1], tabs[2], tabs[3], tabs[4]
 # --- الشاشة الأولى: Quotation Workspace ---
 # ==========================================
 with tab1:
-    st.header("📝 Quotation Workspace")
     
     mode = st.radio("Select Action:", ["Create New Quotation", "Revise Existing Quotation"], horizontal=True)
     st.divider()
@@ -292,164 +304,4 @@ with tab1:
         if is_revision and q_data.get('items_data'):
             try:
                 parsed_data = json.loads(q_data['items_data'])
-                df = pd.DataFrame(parsed_data) if parsed_data else pd.DataFrame(columns=default_cols)
-                for col in default_cols:
-                    if col not in df.columns: df[col] = 0.0
-                st.session_state['current_items_df'] = df
-            except: st.session_state['current_items_df'] = pd.DataFrame(columns=default_cols)
-        else: st.session_state['current_items_df'] = pd.DataFrame(columns=default_cols)
-
-    old_total_val = st.session_state['current_items_df']['Item Value'].sum() if not st.session_state['current_items_df'].empty else 0.0
-
-    st.markdown("*Note: Press **Enter** or click outside the cell after typing to instantly update the 'Item Value'.*")
-    edited_items = st.data_editor(
-        st.session_state['current_items_df'],
-        num_rows="dynamic",
-        column_config={
-            "Item": st.column_config.SelectboxColumn("Item", options=item_options, required=True),
-            "QTY": st.column_config.NumberColumn("QTY", min_value=0.0),
-            "Unit Price": st.column_config.NumberColumn("Unit Price (Rate)", min_value=0.0),
-            "Item Value": st.column_config.NumberColumn("Item Value (Auto)", disabled=True)
-        },
-        use_container_width=True
-    )
-
-    edited_items['QTY'] = pd.to_numeric(edited_items['QTY'], errors='coerce').fillna(0)
-    edited_items['Unit Price'] = pd.to_numeric(edited_items['Unit Price'], errors='coerce').fillna(0)
-    edited_items['Item Value'] = edited_items['QTY'] * edited_items['Unit Price']
-    
-    st.session_state['current_items_df'] = edited_items
-    new_total_val = edited_items['Item Value'].sum()
-    
-    if abs(new_total_val - old_total_val) > 0.001: st.rerun()
-
-    items_json = edited_items.to_json(orient='records')
-    total_val = float(steel_amount) + float(new_total_val)
-
-    st.success(f"### 💰 Live Grand Total: {total_val:,.0f} EGP")
-    st.write(f"*(Steel: {steel_amount:,.0f} EGP + Other Items: {new_total_val:,.0f} EGP)*")
-
-    st.divider()
-    status_options = ["In Progress", "Signed", "Hold", "Rejected", "Lost"]
-    status = st.selectbox("Quotation Status", status_options, 
-                          index=status_options.index(get_val('status', "In Progress")) if get_val('status', "In Progress") in status_options else 0)
-    
-    submit_btn_text = "Update Quotation" if is_revision else "Save New Quotation"
-    submit = st.button(submit_btn_text, type="primary", use_container_width=True)
-
-    if submit:
-        if project_name == "" or client_company == "" or final_country == "":
-            st.error("Please fill in Project Name, Client Company Name, and Country Territory.")
-        elif country_selection == "Other" and not matched_country and len(custom_cc) != 2:
-            st.error("Please enter exactly 2 letters for the Custom Country Code.")
-        else:
-            conn = sqlite3.connect('peb_system.db')
-            c = conn.cursor()
-            if is_revision:
-                c.execute('''UPDATE quotations SET 
-                             quote_date=?, country=?, project_name=?, location=?, buildings=?, 
-                             scope=?, client_type=?, client_company=?, client_contact=?, client_mobile=?, 
-                             client_email=?, client_address=?, consultant_office=?, consultant_contact=?, 
-                             consultant_mobile=?, consultant_email=?, consultant_address=?, pricing_base=?, 
-                             steel_weight=?, steel_amount=?, total_value=?, items_data=?, status=?
-                             WHERE quotation_no=?''',
-                          (str(quote_date), final_country, project_name, location, buildings, scope, client_type, 
-                           client_company, client_contact, client_mobile, client_email, client_address, 
-                           consultant_office, consultant_contact, consultant_mobile, consultant_email, 
-                           consultant_address, pricing_base, steel_weight, steel_amount, total_val, items_json, status, quotation_no))
-                st.toast(f"✅ Quotation {quotation_no} Updated successfully!")
-            else:
-                try:
-                    c.execute('''INSERT INTO quotations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-                              (quotation_no, str(quote_date), final_country, sales_rep, project_name, location, buildings, 
-                               scope, client_type, client_company, client_contact, client_mobile, client_email, 
-                               client_address, consultant_office, consultant_contact, consultant_mobile, consultant_email, 
-                               consultant_address, pricing_base, steel_weight, steel_amount, total_val, items_json, status))
-                    st.toast(f"✅ Quotation {quotation_no} saved successfully!")
-                except sqlite3.IntegrityError:
-                    st.error("A quotation with this number already exists.")
-            conn.commit()
-            conn.close()
-
-# ==========================================
-# --- الشاشة الثانية: Quotation Log ---
-# ==========================================
-with tab2:
-    st.header("📋 Quotation Log")
-    conn = sqlite3.connect('peb_system.db')
-    df_log = pd.read_sql_query('''
-        SELECT quotation_no as "Quote No.", project_name as "Project Name", client_company as "Client Name", 
-               sales_rep as "Sales Name", quote_date as "Entry Date", pricing_base as "Pricing Bases",
-               scope as "Scope of Work", 
-               steel_weight as "Steel Weight", 
-               steel_amount as "Steel Amount",
-               (total_value - steel_amount) as "Other Items Amount",
-               total_value as "Total Value",
-               status as "Status"
-        FROM quotations ORDER BY quotation_no DESC
-    ''', conn)
-    conn.close()
-    
-    if not df_log.empty:
-        def style_status(val):
-            if val == 'Signed': return 'background-color: #28a745; color: white'
-            if val == 'Lost': return 'background-color: #dc3545; color: white'
-            if val == 'Hold': return 'background-color: #ffc107; color: black'
-            if val == 'Rejected': return 'background-color: #add8e6; color: black'
-            return ''
-        
-        df_log['Steel Weight'] = df_log['Steel Weight'].apply(lambda x: f"{x:,.0f}")
-        df_log['Steel Amount'] = df_log['Steel Amount'].apply(lambda x: f"{x:,.0f}")
-        df_log['Other Items Amount'] = df_log['Other Items Amount'].apply(lambda x: f"{x:,.0f}")
-        df_log['Total Value'] = df_log['Total Value'].apply(lambda x: f"{x:,.0f}")
-
-        styled_df = df_log.style.map(style_status, subset=['Status'])
-        st.dataframe(styled_df, use_container_width=True, hide_index=True)
-    else: st.info("No quotations found yet.")
-
-# ==========================================
-# --- الشاشات تحت الإنشاء ---
-# ==========================================
-with tab3: st.header("🏗️ Jobs"); st.info("Projects with 'Signed' status will automatically appear here.")
-with tab4: st.header("💰 Collections"); st.info("Payment tracking will be managed here.")
-with tab5: st.header("📊 KPIs & Reports"); st.info("Dashboards and data exports will be generated here.")
-
-# ==========================================
-# --- الشاشة السادسة: Prospect List (للـ Admin فقط) ---
-# ==========================================
-if is_admin:
-    with tabs[5]:
-        st.header("🕵️ Prospect List (Admin Dashboard)")
-        st.markdown("This list automatically extracts and organizes all client and consultant contacts from your quotations.")
-        
-        conn = sqlite3.connect('peb_system.db')
-        
-        df_clients = pd.read_sql_query('''
-            SELECT DISTINCT client_contact as "Contact Name", client_company as "Company / Office",
-                   client_mobile as "Mobile", client_email as "Email", client_address as "Address",
-                   'Client' as "Type"
-            FROM quotations WHERE client_company != ''
-        ''', conn)
-        
-        df_consultants = pd.read_sql_query('''
-            SELECT DISTINCT consultant_contact as "Contact Name", consultant_office as "Company / Office",
-                   consultant_mobile as "Mobile", consultant_email as "Email", consultant_address as "Address",
-                   'Consultant' as "Type"
-            FROM quotations WHERE consultant_office != ''
-        ''', conn)
-        
-        conn.close()
-        
-        if not df_clients.empty or not df_consultants.empty:
-            df_prospects = pd.concat([df_clients, df_consultants], ignore_index=True)
-            df_prospects = df_prospects.drop_duplicates(subset=["Company / Office", "Contact Name"])
-            
-            def style_type(val):
-                if val == 'Client': return 'background-color: #17a2b8; color: white'
-                if val == 'Consultant': return 'background-color: #6c757d; color: white'
-                return ''
-                
-            styled_prospects = df_prospects.style.map(style_type, subset=['Type'])
-            st.dataframe(styled_prospects, use_container_width=True, hide_index=True)
-        else:
-            st.info("No prospect data available yet. Start creating quotations to build your list.")
+                df
