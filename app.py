@@ -43,20 +43,16 @@ def get_next_serial():
     c.execute("SELECT quotation_no FROM quotations")
     records = c.fetchall()
     conn.close()
-    
     max_seq = 0
     for r in records:
         try:
             seq = int(r[0].split('-')[1])
-            if seq > max_seq:
-                max_seq = seq
-        except:
-            pass
+            if seq > max_seq: max_seq = seq
+        except: pass
     return max_seq + 1
 
 # --- نظام تسجيل الدخول ---
-if 'logged_in' not in st.session_state:
-    st.session_state.logged_in = False
+if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 
 def login_screen():
     st.title("🏗️ Sales Bay - PEB System")
@@ -75,18 +71,13 @@ if not st.session_state.logged_in:
     login_screen()
     st.stop()
 
-# --- القائمة العلوية للتنقل ---
 st.sidebar.title(f"👤 {st.session_state.username}")
 if st.sidebar.button("Logout"):
     st.session_state.logged_in = False
     st.rerun()
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "📝 Quotation Workspace", 
-    "📋 Quotation Log", 
-    "🏗️ Jobs", 
-    "💰 Collections", 
-    "📊 KPIs & Reports"
+    "📝 Quotation Workspace", "📋 Quotation Log", "🏗️ Jobs", "💰 Collections", "📊 KPIs & Reports"
 ])
 
 # ==========================================
@@ -100,14 +91,20 @@ with tab1:
 
     q_data = {}
     is_revision = False
-
-    # مسح الداتا المؤقتة لو غيرنا وضع العمل عشان الجدول ينضف
-    if st.session_state.get('last_mode') != mode:
-        st.session_state['last_mode'] = mode
-        if 'current_items_df' in st.session_state:
-            del st.session_state['current_items_df']
-
     selected_q = None
+
+    # دالة لتنسيق الأرقام بفواصل الألوف أوتوماتيك
+    def format_money():
+        try:
+            val_a = str(st.session_state.sa_input).replace(',', '')
+            if val_a: st.session_state.sa_input = f"{float(val_a):,.2f}"
+        except: pass
+        try:
+            val_w = str(st.session_state.sw_input).replace(',', '')
+            if val_w: st.session_state.sw_input = f"{float(val_w):,.3f}"
+        except: pass
+
+    # ضبط الداتا المؤقتة عشان الفواصل تشتغل صح
     if mode == "Revise Existing Quotation":
         is_revision = True
         conn = sqlite3.connect('peb_system.db')
@@ -116,43 +113,49 @@ with tab1:
         
         if not df_quotes.empty:
             selected_q = st.selectbox("Select Quotation to Revise", df_quotes['quotation_no'])
-            
-            # لو اخترنا عرض جديد للتعديل، نمسح الداتا المؤقتة
             if st.session_state.get('last_q') != selected_q:
                 st.session_state['last_q'] = selected_q
-                if 'current_items_df' in st.session_state:
-                    del st.session_state['current_items_df']
-
-            if selected_q:
                 conn = sqlite3.connect('peb_system.db')
                 c = conn.cursor()
                 c.execute("SELECT * FROM quotations WHERE quotation_no=?", (selected_q,))
                 row = c.fetchone()
-                col_names = [description[0] for description in c.description]
+                col_names = [desc[0] for desc in c.description]
                 q_data = dict(zip(col_names, row))
                 conn.close()
-                st.info(f"Editing Mode Active for: **{selected_q}**")
+                
+                st.session_state['sa_input'] = f"{float(q_data.get('steel_amount', 0)):,.2f}"
+                st.session_state['sw_input'] = f"{float(q_data.get('steel_weight', 0)):,.3f}"
+                if 'current_items_df' in st.session_state: del st.session_state['current_items_df']
+            else:
+                conn = sqlite3.connect('peb_system.db')
+                c = conn.cursor()
+                c.execute("SELECT * FROM quotations WHERE quotation_no=?", (selected_q,))
+                q_data = dict(zip([desc[0] for desc in c.description], c.fetchone()))
+                conn.close()
+                
+            st.info(f"Editing Mode Active for: **{selected_q}**")
         else:
             st.warning("No quotations available to revise.")
             st.stop()
     else:
-        st.session_state['last_q'] = None
+        if st.session_state.get('last_mode') != mode:
+            st.session_state['last_mode'] = mode
+            st.session_state['sa_input'] = "0.00"
+            st.session_state['sw_input'] = "0.000"
+            if 'current_items_df' in st.session_state: del st.session_state['current_items_df']
+            st.session_state['last_q'] = None
     
     current_year = datetime.now().year
-    
-    def get_val(key, default):
-        return q_data.get(key, default) if is_revision else default
+    def get_val(key, default): return q_data.get(key, default) if is_revision else default
     
     col1, col2, col3 = st.columns(3)
     
     with col1:
         country = st.selectbox("Country Territory", list(countries_map.keys()), 
                                index=list(countries_map.keys()).index(get_val('country', "Egypt")) if is_revision else 0)
-        
         try: default_date = datetime.strptime(get_val('quote_date', str(datetime.now().date())), '%Y-%m-%d').date()
         except: default_date = datetime.now().date()
         quote_date = st.date_input("Entry Date", value=default_date)
-        
         sales_rep = st.text_input("Sales Responsible", value=get_val('sales_rep', st.session_state.username), disabled=True)
         
     with col2:
@@ -167,26 +170,20 @@ with tab1:
                                     index=["Re-Measurable", "Lump-sum"].index(get_val('pricing_base', "Re-Measurable")) if is_revision else 0)
         
         sc_1, sc_2 = st.columns(2)
-        
-        # --- التعديل الجذري لكتابة الأرقام العشرية بكل حرية ---
         with sc_1: 
-            sw_in = st.text_input("Steel Weight (MT)", value=str(get_val('steel_weight', "0.0")))
+            sw_in = st.text_input("Steel Weight (MT)", key="sw_input", on_change=format_money)
             try: steel_weight = float(sw_in.replace(',', ''))
             except: steel_weight = 0.0
             
         with sc_2: 
-            sa_in = st.text_input("Steel Amount (EGP)", value=str(get_val('steel_amount', "0.0")))
+            sa_in = st.text_input("Steel Amount (EGP)", key="sa_input", on_change=format_money)
             try: steel_amount = float(sa_in.replace(',', ''))
             except: steel_amount = 0.0
 
-    if is_revision:
-        quotation_no = q_data['quotation_no']
-    else:
-        cc = countries_map[country]
-        quotation_no = f"{cc}-{get_next_serial():03d}-{current_year}"
+    if is_revision: quotation_no = q_data['quotation_no']
+    else: quotation_no = f"{countries_map[country]}-{get_next_serial():03d}-{current_year}"
     
     st.info(f"**Quotation Number:** {quotation_no}")
-
     st.divider()
     
     c1, c2 = st.columns(2)
@@ -213,28 +210,21 @@ with tab1:
     st.subheader("🛠️ Additional Items")
     item_options = ["Single Skin", "Sandwich Panel", "Standing Seam", "Rain Gutter", "Skylight", 
                     "Wall Light", "Grating", "Chequered Plate", "Metal Decking", "Lifeline", "Ridge Panel", "Other"]
-    
     default_cols = ["Item", "Description", "Unit", "QTY", "Unit Price", "Item Value"]
     
-    # --- التحديث الصامت للجدول عشان يشتغل زي الإكسيل ---
     if 'current_items_df' not in st.session_state:
         if is_revision and q_data.get('items_data'):
             try:
                 parsed_data = json.loads(q_data['items_data'])
-                if parsed_data:
-                    df = pd.DataFrame(parsed_data)
-                    for col in default_cols:
-                        if col not in df.columns: df[col] = 0.0
-                    st.session_state['current_items_df'] = df
-                else:
-                    st.session_state['current_items_df'] = pd.DataFrame(columns=default_cols)
-            except:
-                st.session_state['current_items_df'] = pd.DataFrame(columns=default_cols)
-        else:
-            st.session_state['current_items_df'] = pd.DataFrame(columns=default_cols)
+                df = pd.DataFrame(parsed_data) if parsed_data else pd.DataFrame(columns=default_cols)
+                for col in default_cols:
+                    if col not in df.columns: df[col] = 0.0
+                st.session_state['current_items_df'] = df
+            except: st.session_state['current_items_df'] = pd.DataFrame(columns=default_cols)
+        else: st.session_state['current_items_df'] = pd.DataFrame(columns=default_cols)
 
-    st.markdown("*Note: Press **Enter** or click outside the cell after typing to instantly update the 'Item Value'.*")
-    
+    old_total_val = st.session_state['current_items_df']['Item Value'].sum() if not st.session_state['current_items_df'].empty else 0.0
+
     edited_items = st.data_editor(
         st.session_state['current_items_df'],
         num_rows="dynamic",
@@ -247,21 +237,23 @@ with tab1:
         use_container_width=True
     )
 
-    # حساب الـ Item Value برمجياً
+    # --- حساب النتيجة وعمل تحديث صامت للجدول ---
     edited_items['QTY'] = pd.to_numeric(edited_items['QTY'], errors='coerce').fillna(0)
     edited_items['Unit Price'] = pd.to_numeric(edited_items['Unit Price'], errors='coerce').fillna(0)
     edited_items['Item Value'] = edited_items['QTY'] * edited_items['Unit Price']
     
-    # تحديث الداتا المؤقتة عشان تظهر النتيجة في الشاشة فوراً
     st.session_state['current_items_df'] = edited_items
-    items_json = edited_items.to_json(orient='records')
+    new_total_val = edited_items['Item Value'].sum()
     
-    total_items_val = edited_items['Item Value'].sum()
-    total_val = float(steel_amount) + float(total_items_val)
+    # لو حصل تغيير في الحسابات، الجدول بيعمل Refresh لنفسه في لحظتها عشان يظهر الرقم
+    if abs(new_total_val - old_total_val) > 0.001:
+        st.rerun()
 
-    # عرض الإجمالي الكلي الحي
+    items_json = edited_items.to_json(orient='records')
+    total_val = float(steel_amount) + float(new_total_val)
+
     st.success(f"### 💰 Live Grand Total: {total_val:,.2f} EGP")
-    st.write(f"*(Steel: {steel_amount:,.2f} EGP + Additional Items: {total_items_val:,.2f} EGP)*")
+    st.write(f"*(Steel: {steel_amount:,.2f} EGP + Additional Items: {new_total_val:,.2f} EGP)*")
 
     st.divider()
     status_options = ["In Progress", "Signed", "Hold", "Rejected", "Lost"]
@@ -269,7 +261,6 @@ with tab1:
                           index=status_options.index(get_val('status', "In Progress")) if get_val('status', "In Progress") in status_options else 0)
     
     submit_btn_text = "Update Quotation" if is_revision else "Save New Quotation"
-    
     submit = st.button(submit_btn_text, type="primary", use_container_width=True)
 
     if submit:
@@ -278,7 +269,6 @@ with tab1:
         else:
             conn = sqlite3.connect('peb_system.db')
             c = conn.cursor()
-            
             if is_revision:
                 c.execute('''UPDATE quotations SET 
                              quote_date=?, country=?, project_name=?, location=?, buildings=?, 
@@ -287,24 +277,21 @@ with tab1:
                              consultant_mobile=?, consultant_email=?, consultant_address=?, pricing_base=?, 
                              steel_weight=?, steel_amount=?, total_value=?, items_data=?, status=?
                              WHERE quotation_no=?''',
-                          (str(quote_date), country, project_name, location, buildings, 
-                           scope, client_type, client_company, client_contact, client_mobile, 
-                           client_email, client_address, consultant_office, consultant_contact, 
-                           consultant_mobile, consultant_email, consultant_address, pricing_base, 
-                           steel_weight, steel_amount, total_val, items_json, status, quotation_no))
+                          (str(quote_date), country, project_name, location, buildings, scope, client_type, 
+                           client_company, client_contact, client_mobile, client_email, client_address, 
+                           consultant_office, consultant_contact, consultant_mobile, consultant_email, 
+                           consultant_address, pricing_base, steel_weight, steel_amount, total_val, items_json, status, quotation_no))
                 st.toast(f"✅ Quotation {quotation_no} Updated successfully!")
             else:
                 try:
                     c.execute('''INSERT INTO quotations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-                              (quotation_no, str(quote_date), country, sales_rep, project_name, location, 
-                               buildings, scope, client_type, client_company, client_contact, client_mobile, 
-                               client_email, client_address, consultant_office, consultant_contact, 
-                               consultant_mobile, consultant_email, consultant_address, pricing_base, 
-                               steel_weight, steel_amount, total_val, items_json, status))
+                              (quotation_no, str(quote_date), country, sales_rep, project_name, location, buildings, 
+                               scope, client_type, client_company, client_contact, client_mobile, client_email, 
+                               client_address, consultant_office, consultant_contact, consultant_mobile, consultant_email, 
+                               consultant_address, pricing_base, steel_weight, steel_amount, total_val, items_json, status))
                     st.toast(f"✅ Quotation {quotation_no} saved successfully!")
                 except sqlite3.IntegrityError:
                     st.error("A quotation with this number already exists.")
-            
             conn.commit()
             conn.close()
 
@@ -313,20 +300,12 @@ with tab1:
 # ==========================================
 with tab2:
     st.header("📋 Quotation Log")
-    
     conn = sqlite3.connect('peb_system.db')
     df_log = pd.read_sql_query('''
-        SELECT quotation_no as "Quote No.", 
-               project_name as "Project Name", 
-               client_company as "Client Name", 
-               sales_rep as "Sales Name", 
-               quote_date as "Entry Date",
-               pricing_base as "Pricing Bases",
-               scope as "Scope of Work",
-               status as "Status",
-               total_value as "Total Value"
-        FROM quotations 
-        ORDER BY quotation_no DESC
+        SELECT quotation_no as "Quote No.", project_name as "Project Name", client_company as "Client Name", 
+               sales_rep as "Sales Name", quote_date as "Entry Date", pricing_base as "Pricing Bases",
+               scope as "Scope of Work", status as "Status", total_value as "Total Value"
+        FROM quotations ORDER BY quotation_no DESC
     ''', conn)
     conn.close()
     
@@ -337,29 +316,11 @@ with tab2:
             if val == 'Hold': return 'background-color: #ffc107; color: black'
             if val == 'Rejected': return 'background-color: #add8e6; color: black'
             return ''
-            
         styled_df = df_log.style.map(style_status, subset=['Status'])
-        
-        st.dataframe(
-            styled_df, 
-            use_container_width=True, 
-            hide_index=True,
-            column_config={
-                "Total Value": st.column_config.NumberColumn(format="%.2f")
-            }
-        )
-    else:
-        st.info("No quotations found yet. Please create a new quote.")
+        st.dataframe(styled_df, use_container_width=True, hide_index=True, column_config={"Total Value": st.column_config.NumberColumn(format="%.2f")})
+    else: st.info("No quotations found yet.")
 
 # --- باقي الشاشات ---
-with tab3:
-    st.header("🏗️ Jobs")
-    st.info("Projects with 'Signed' status will automatically appear here.")
-
-with tab4:
-    st.header("💰 Collections")
-    st.info("Payment tracking will be managed here.")
-
-with tab5:
-    st.header("📊 KPIs & Reports")
-    st.info("Dashboards and data exports will be generated here.")
+with tab3: st.header("🏗️ Jobs"); st.info("Projects with 'Signed' status will automatically appear here.")
+with tab4: st.header("💰 Collections"); st.info("Payment tracking will be managed here.")
+with tab5: st.header("📊 KPIs & Reports"); st.info("Dashboards and data exports will be generated here.")
