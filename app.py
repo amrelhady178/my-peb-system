@@ -48,3 +48,283 @@ def get_next_serial():
     for r in records:
         try:
             seq = int(r[0].split('-')[1])
+            if seq > max_seq:
+                max_seq = seq
+        except:
+            pass
+    return max_seq + 1
+
+# --- نظام تسجيل الدخول ---
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
+
+def login_screen():
+    st.title("🏗️ Sales Bay - PEB System")
+    user = st.text_input("Username")
+    pw = st.text_input("Password", type="password")
+    if st.button("Login"):
+        users = {"eng_ahmed": "123", "eng_mohamed": "456", "admin": "admin789"}
+        if user in users and users[user] == pw:
+            st.session_state.logged_in = True
+            st.session_state.username = user
+            st.rerun()
+        else:
+            st.error("Invalid Credentials")
+
+if not st.session_state.logged_in:
+    login_screen()
+    st.stop()
+
+# --- القائمة العلوية للتنقل ---
+st.sidebar.title(f"👤 {st.session_state.username}")
+if st.sidebar.button("Logout"):
+    st.session_state.logged_in = False
+    st.rerun()
+
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "📝 Quotation Workspace", 
+    "📋 Quotation Log", 
+    "🏗️ Jobs", 
+    "💰 Collections", 
+    "📊 KPIs & Reports"
+])
+
+# ==========================================
+# --- الشاشة الأولى: Quotation Workspace ---
+# ==========================================
+with tab1:
+    st.header("📝 Quotation Workspace")
+    
+    mode = st.radio("Select Action:", ["Create New Quotation", "Revise Existing Quotation"], horizontal=True)
+    st.divider()
+
+    q_data = {}
+    is_revision = False
+
+    if mode == "Revise Existing Quotation":
+        is_revision = True
+        conn = sqlite3.connect('peb_system.db')
+        df_quotes = pd.read_sql_query("SELECT quotation_no FROM quotations ORDER BY quotation_no DESC", conn)
+        conn.close()
+        
+        if not df_quotes.empty:
+            selected_q = st.selectbox("Select Quotation to Revise", df_quotes['quotation_no'])
+            if selected_q:
+                conn = sqlite3.connect('peb_system.db')
+                c = conn.cursor()
+                c.execute("SELECT * FROM quotations WHERE quotation_no=?", (selected_q,))
+                row = c.fetchone()
+                col_names = [description[0] for description in c.description]
+                q_data = dict(zip(col_names, row))
+                conn.close()
+                st.info(f"Editing Mode Active for: **{selected_q}**")
+        else:
+            st.warning("No quotations available to revise.")
+            st.stop()
+    
+    current_year = datetime.now().year
+    
+    def get_val(key, default):
+        return q_data.get(key, default) if is_revision else default
+
+    with st.form("quotation_form"):
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            country = st.selectbox("Country Territory", list(countries_map.keys()), 
+                                   index=list(countries_map.keys()).index(get_val('country', "Egypt")) if is_revision else 0)
+            
+            try: default_date = datetime.strptime(get_val('quote_date', str(datetime.now().date())), '%Y-%m-%d').date()
+            except: default_date = datetime.now().date()
+            quote_date = st.date_input("Entry Date", value=default_date)
+            
+            sales_rep = st.text_input("Sales Responsible", value=get_val('sales_rep', st.session_state.username), disabled=True)
+            
+        with col2:
+            project_name = st.text_input("Project Name", value=get_val('project_name', ""))
+            location = st.text_input("Project Location", value=get_val('location', ""))
+            buildings = st.number_input("Number of Buildings", min_value=1, step=1, value=int(get_val('buildings', 1)))
+            
+        with col3:
+            scope = st.selectbox("Scope of Work", ["Supply Only", "Supply & Erection", "Ex-Work"], 
+                                 index=["Supply Only", "Supply & Erection", "Ex-Work"].index(get_val('scope', "Supply Only")) if is_revision else 0)
+            pricing_base = st.selectbox("Pricing Base", ["Re-Measurable", "Lump-sum"], 
+                                        index=["Re-Measurable", "Lump-sum"].index(get_val('pricing_base', "Re-Measurable")) if is_revision else 0)
+            
+            sc_1, sc_2 = st.columns(2)
+            with sc_1: steel_weight = st.number_input("Steel Weight (MT)", min_value=0.0, value=float(get_val('steel_weight', 0.0)), format="%.3f")
+            with sc_2: steel_amount = st.number_input("Steel Amount", min_value=0.0, value=float(get_val('steel_amount', 0.0)), format="%.2f")
+
+        if is_revision:
+            quotation_no = q_data['quotation_no']
+        else:
+            cc = countries_map[country]
+            quotation_no = f"{cc}-{get_next_serial():03d}-{current_year}"
+        
+        st.info(f"**Quotation Number:** {quotation_no}")
+
+        st.divider()
+        
+        c1, c2 = st.columns(2)
+        with c1:
+            st.subheader("🏢 Client Info")
+            client_type = st.selectbox("Client Type", ["Enduser", "Contractor", "Consultant"], 
+                                       index=["Enduser", "Contractor", "Consultant"].index(get_val('client_type', "Enduser")) if is_revision else 0)
+            client_company = st.text_input("Company Name", value=get_val('client_company', ""))
+            client_contact = st.text_input("Client Contact Person", value=get_val('client_contact', ""))
+            client_mobile = st.text_input("Client Mobile", value=get_val('client_mobile', ""))
+            client_email = st.text_input("Client Email", value=get_val('client_email', ""))
+            client_address = st.text_area("Client Company Address", value=get_val('client_address', ""))
+            
+        with c2:
+            st.subheader("👔 Consultant Info")
+            consultant_office = st.text_input("Consultant Office Name", value=get_val('consultant_office', ""))
+            consultant_contact = st.text_input("Consultant Contact Person", value=get_val('consultant_contact', ""))
+            consultant_mobile = st.text_input("Consultant Mobile", value=get_val('consultant_mobile', ""))
+            consultant_email = st.text_input("Consultant Email", value=get_val('consultant_email', ""))
+            consultant_address = st.text_area("Consultant Office Address", value=get_val('consultant_address', ""))
+
+        st.divider()
+        
+        st.subheader("🛠️ Additional Items")
+        item_options = ["Single Skin", "Sandwich Panel", "Standing Seam", "Rain Gutter", "Skylight", 
+                        "Wall Light", "Grating", "Chequered Plate", "Metal Decking", "Lifeline", "Ridge Panel", "Other"]
+        
+        default_cols = ["Item", "Description", "Unit", "QTY", "Unit Price", "Item Value"]
+        df_items = pd.DataFrame(columns=default_cols)
+
+        if is_revision and q_data.get('items_data'):
+            try:
+                parsed_data = json.loads(q_data['items_data'])
+                if parsed_data:
+                    df_items = pd.DataFrame(parsed_data)
+                    for col in default_cols:
+                        if col not in df_items.columns:
+                            df_items[col] = 0.0
+            except Exception as e:
+                pass
+        
+        st.markdown("*Note: 'Item Value' is calculated automatically when you click the Save/Update button.*")
+        edited_items = st.data_editor(
+            df_items,
+            num_rows="dynamic",
+            column_config={
+                "Item": st.column_config.SelectboxColumn("Item", options=item_options, required=True),
+                "QTY": st.column_config.NumberColumn("QTY", min_value=0.0, format="%.2f"),
+                "Unit Price": st.column_config.NumberColumn("Unit Price (Rate)", min_value=0.0, format="%.2f"),
+                "Item Value": st.column_config.NumberColumn("Item Value (Auto)", disabled=True, format="%.2f")
+            },
+            use_container_width=True
+        )
+
+        st.divider()
+        status_options = ["In Progress", "Signed", "Hold", "Rejected", "Lost"]
+        status = st.selectbox("Quotation Status", status_options, 
+                              index=status_options.index(get_val('status', "In Progress")) if get_val('status', "In Progress") in status_options else 0)
+        
+        submit_btn_text = "Update Quotation" if is_revision else "Save New Quotation"
+        submit = st.form_submit_button(submit_btn_text)
+
+        if submit:
+            if project_name == "" or client_company == "":
+                st.error("Please fill in Project Name and Client Company Name.")
+            else:
+                if 'QTY' not in edited_items.columns: edited_items['QTY'] = 0.0
+                if 'Unit Price' not in edited_items.columns: edited_items['Unit Price'] = 0.0
+                
+                edited_items['QTY'] = pd.to_numeric(edited_items['QTY'], errors='coerce').fillna(0)
+                edited_items['Unit Price'] = pd.to_numeric(edited_items['Unit Price'], errors='coerce').fillna(0)
+                
+                edited_items['Item Value'] = edited_items['QTY'] * edited_items['Unit Price']
+                items_json = edited_items.to_json(orient='records')
+                
+                total_val = float(steel_amount) + float(edited_items['Item Value'].sum())
+                
+                conn = sqlite3.connect('peb_system.db')
+                c = conn.cursor()
+                
+                if is_revision:
+                    c.execute('''UPDATE quotations SET 
+                                 quote_date=?, country=?, project_name=?, location=?, buildings=?, 
+                                 scope=?, client_type=?, client_company=?, client_contact=?, client_mobile=?, 
+                                 client_email=?, client_address=?, consultant_office=?, consultant_contact=?, 
+                                 consultant_mobile=?, consultant_email=?, consultant_address=?, pricing_base=?, 
+                                 steel_weight=?, steel_amount=?, total_value=?, items_data=?, status=?
+                                 WHERE quotation_no=?''',
+                              (str(quote_date), country, project_name, location, buildings, 
+                               scope, client_type, client_company, client_contact, client_mobile, 
+                               client_email, client_address, consultant_office, consultant_contact, 
+                               consultant_mobile, consultant_email, consultant_address, pricing_base, 
+                               steel_weight, steel_amount, total_val, items_json, status, quotation_no))
+                    st.success(f"✅ Quotation {quotation_no} Updated successfully! Check the 'Quotation Log' tab.")
+                else:
+                    try:
+                        c.execute('''INSERT INTO quotations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                                  (quotation_no, str(quote_date), country, sales_rep, project_name, location, 
+                                   buildings, scope, client_type, client_company, client_contact, client_mobile, 
+                                   client_email, client_address, consultant_office, consultant_contact, 
+                                   consultant_mobile, consultant_email, consultant_address, pricing_base, 
+                                   steel_weight, steel_amount, total_val, items_json, status))
+                        st.success(f"✅ Quotation {quotation_no} saved successfully! Check the 'Quotation Log' tab.")
+                    except sqlite3.IntegrityError:
+                        st.error("A quotation with this number already exists.")
+                
+                conn.commit()
+                conn.close()
+
+# ==========================================
+# --- الشاشة الثانية: Quotation Log ---
+# ==========================================
+with tab2:
+    st.header("📋 Quotation Log")
+    
+    conn = sqlite3.connect('peb_system.db')
+    df_log = pd.read_sql_query('''
+        SELECT quotation_no as "Quote No.", 
+               project_name as "Project Name", 
+               client_company as "Client Name", 
+               sales_rep as "Sales Name", 
+               quote_date as "Entry Date",
+               pricing_base as "Pricing Bases",
+               scope as "Scope of Work",
+               status as "Status",
+               total_value as "Total Value"
+        FROM quotations 
+        ORDER BY quotation_no DESC
+    ''', conn)
+    conn.close()
+    
+    if not df_log.empty:
+        def style_status(val):
+            if val == 'Signed': return 'background-color: #28a745; color: white'
+            if val == 'Lost': return 'background-color: #dc3545; color: white'
+            if val == 'Hold': return 'background-color: #ffc107; color: black'
+            if val == 'Rejected': return 'background-color: #add8e6; color: black'
+            return ''
+            
+        styled_df = df_log.style.map(style_status, subset=['Status'])
+        
+        # عرض الجدول مع تنسيق عمود الإجمالي ليظهر بكسور عشرية
+        st.dataframe(
+            styled_df, 
+            use_container_width=True, 
+            hide_index=True,
+            column_config={
+                "Total Value": st.column_config.NumberColumn(format="%.2f")
+            }
+        )
+    else:
+        st.info("No quotations found yet. Please create a new quote.")
+
+# --- باقي الشاشات ---
+with tab3:
+    st.header("🏗️ Jobs")
+    st.info("Projects with 'Signed' status will automatically appear here.")
+
+with tab4:
+    st.header("💰 Collections")
+    st.info("Payment tracking will be managed here.")
+
+with tab5:
+    st.header("📊 KPIs & Reports")
+    st.info("Dashboards and data exports will be generated here.")
