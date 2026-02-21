@@ -4,6 +4,7 @@ import sqlite3
 import json
 from datetime import datetime
 import os
+import difflib  # تم الإضافة عشان الذكاء الاصطناعي في استنتاج الحروف (Fuzzy Matching)
 
 # ==========================================
 # --- إعدادات الصفحة والهوية البصرية ---
@@ -18,14 +19,14 @@ logo_path = get_logo_path()
 
 st.set_page_config(page_title="Sales Bay", page_icon=logo_path, layout="wide", initial_sidebar_state="collapsed")
 
-# --- كود الـ CSS السحري (لإخفاء البهتان، تمديد التابز، وإخفاء الأسهم من الأرقام) ---
+# --- كود الـ CSS (لإخفاء البهتان، تكبير التابز، وعمل قائمة البروفايل) ---
 custom_css = """
 <style>
 /* إخفاء علامات Streamlit */
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 
-/* تمديد الـ Tabs لتملأ الشاشة بالكامل */
+/* تمديد الـ Tabs لتملأ الشاشة بالكامل وتكبير الخط */
 [data-baseweb="tab-list"] {
     display: flex;
     width: 100%;
@@ -33,25 +34,24 @@ footer {visibility: hidden;}
 [data-baseweb="tab"] {
     flex-grow: 1;
     justify-content: center;
-    font-size: 16px;
-    font-weight: bold;
+}
+[data-baseweb="tab"] p, [data-baseweb="tab"] div {
+    font-size: 20px !important;
+    font-weight: 700 !important;
 }
 
-/* 🚀 قتل بهتان الشاشة (Flicker) أثناء الحسابات اللحظية 🚀 */
-.stApp [data-testid="stAppViewContainer"] {
+/* 🚀 قتل بهتان الشاشة (Flicker) نهائياً 🚀 */
+.stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
     opacity: 1 !important;
     transition: none !important;
+    filter: none !important;
 }
-.stApp [data-testid="stHeader"] {
-    opacity: 1 !important;
-    transition: none !important;
-}
-/* إخفاء علامة التحميل (Running Man) */
 [data-testid="stStatusWidget"] {
     visibility: hidden !important;
+    display: none !important;
 }
 
-/* إخفاء أسهم الزيادة والنقصان من خانات الأرقام لشكل أنظف */
+/* إخفاء أسهم الزيادة والنقصان من الأرقام */
 input[type=number]::-webkit-inner-spin-button, 
 input[type=number]::-webkit-outer-spin-button { 
     -webkit-appearance: none; 
@@ -59,6 +59,16 @@ input[type=number]::-webkit-outer-spin-button {
 }
 input[type=number] {
     -moz-appearance: textfield;
+}
+
+/* تظبيط شكل زرار البروفايل ليكون شفاف */
+[data-testid="stPopover"] button {
+    border: 1px solid #ddd !important;
+    border-radius: 8px !important;
+    background-color: transparent !important;
+    font-size: 16px !important;
+    font-weight: bold !important;
+    padding: 5px 15px !important;
 }
 </style>
 """
@@ -107,6 +117,14 @@ countries_map = {
     "Yemen": "YE", "Zambia": "ZM", "Zimbabwe": "ZW"
 }
 
+# قائمة محافظات مصر
+egypt_govs = sorted([
+    "Cairo", "Giza", "Alexandria", "Aswan", "Asyut", "Beheira", "Beni Suef", "Dakahlia", 
+    "Damietta", "Fayoum", "Gharbia", "Ismailia", "Kafr El Sheikh", "Luxor", "Matrouh", 
+    "Minya", "Monufia", "New Valley", "North Sinai", "Port Said", "Qalyubia", "Qena", 
+    "Red Sea", "Sharqia", "Sohag", "South Sinai", "Suez"
+])
+
 def get_next_serial():
     conn = sqlite3.connect('peb_system.db')
     c = conn.cursor()
@@ -122,7 +140,7 @@ def get_next_serial():
     return max_seq + 1
 
 # ==========================================
-# --- شاشة تسجيل الدخول (نظيفة واحترافية) ---
+# --- شاشة تسجيل الدخول ---
 # ==========================================
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 
@@ -158,19 +176,22 @@ if not st.session_state.logged_in:
 else:
     is_admin = (st.session_state.username == "admin")
 
-    # --- الهيدر العلوي (العنوان + البروفايل) ---
+    # --- الهيدر العلوي (بدون لوجو، والبروفايل كقائمة منسدلة) ---
     col_title, col_space, col_profile = st.columns([8, 1, 2])
     with col_title:
         st.title("Sales Bay Workspace")
     with col_profile:
-        st.markdown(f"<div style='text-align: right; margin-top: 15px;'>👤 <b>{st.session_state.username}</b></div>", unsafe_allow_html=True)
-        if st.button("Logout", use_container_width=True):
-            st.session_state.logged_in = False
-            st.rerun()
+        st.write("") # لضبط المسافة
+        # نظام الـ Popover (قائمة منسدلة للبروفايل)
+        with st.popover(f"👤 {st.session_state.username}"):
+            st.markdown(f"Signed in as: **{st.session_state.username}**")
+            st.divider()
+            if st.button("🚪 Logout", use_container_width=True):
+                st.session_state.logged_in = False
+                st.rerun()
     
-    st.write("") # مسافة بسيطة
+    st.write("") 
 
-    # --- تجهيز الـ Tabs بدون إيموجي ---
     tabs_titles = ["Dashboard", "Quotation Workspace", "Quotation Log", "Jobs", "Collections"]
     if is_admin:
         tabs_titles.extend(["Reports", "KPIs", "Prospect List"])
@@ -272,7 +293,35 @@ else:
                 
             with col2:
                 project_name = st.text_input("Project Name", value=get_val('project_name', ""))
-                location = st.text_input("Project Location", value=get_val('location', ""))
+                
+                # --- نظام المحافظات الذكي (مصر) ---
+                db_location = get_val('location', "")
+                if final_country == "Egypt":
+                    if is_revision and db_location not in egypt_govs and db_location != "":
+                        default_gov_index = len(egypt_govs) # Other
+                    else:
+                        default_gov_index = egypt_govs.index(db_location) if db_location in egypt_govs else 0
+                        
+                    gov_selection = st.selectbox("Project Location (Governorate)", egypt_govs + ["Other"], index=default_gov_index)
+                    
+                    if gov_selection == "Other":
+                        custom_gov = st.text_input("Enter Governorate Name", value=db_location if (is_revision and db_location not in egypt_govs) else "")
+                        if custom_gov:
+                            # الذكاء الاصطناعي للبحث عن أقرب محافظة من الحروف (Fuzzy Matching)
+                            matches = difflib.get_close_matches(custom_gov.lower(), [g.lower() for g in egypt_govs], n=1, cutoff=0.7)
+                            if matches:
+                                matched_gov = next(g for g in egypt_govs if g.lower() == matches[0])
+                                st.info(f"💡 Auto-corrected to: **{matched_gov}**")
+                                location = matched_gov
+                            else:
+                                location = custom_gov
+                        else:
+                            location = ""
+                    else:
+                        location = gov_selection
+                else:
+                    location = st.text_input("Project Location", value=db_location)
+                
                 buildings = st.number_input("Number of Buildings", min_value=1, step=1, value=int(get_val('buildings', 1)))
                 
             with col3:
@@ -293,9 +342,10 @@ else:
             st.info(f"**Quotation Number:** {quotation_no}")
             st.divider()
             
+            # --- شيلنا الإيموجيز من العناوين ---
             c1, c2 = st.columns(2)
             with c1:
-                st.subheader("🏢 Client Info")
+                st.subheader("Client Info")
                 client_type = st.selectbox("Client Type", ["Enduser", "Contractor", "Consultant"], 
                                            index=["Enduser", "Contractor", "Consultant"].index(get_val('client_type', "Enduser")) if is_revision else 0)
                 client_company = st.text_input("Company Name", value=get_val('client_company', ""))
@@ -305,7 +355,7 @@ else:
                 client_address = st.text_area("Client Company Address", value=get_val('client_address', ""))
                 
             with c2:
-                st.subheader("👔 Consultant Info")
+                st.subheader("Consultant Info")
                 consultant_office = st.text_input("Consultant Office Name", value=get_val('consultant_office', ""))
                 consultant_contact = st.text_input("Consultant Contact Person", value=get_val('consultant_contact', ""))
                 consultant_mobile = st.text_input("Consultant Mobile", value=get_val('consultant_mobile', ""))
@@ -314,7 +364,7 @@ else:
 
             st.divider()
             
-            st.subheader("🛠️ Other Items")
+            st.subheader("Other Items")
             item_options = ["Single Skin", "Sandwich Panel", "Standing Seam", "Rain Gutter", "Skylight", 
                             "Wall Light", "Grating", "Chequered Plate", "Metal Decking", "Lifeline", "Ridge Panel", "Other"]
             default_cols = ["Item", "Description", "Unit", "QTY", "Unit Price", "Item Value"]
