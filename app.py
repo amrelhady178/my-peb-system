@@ -19,7 +19,7 @@ logo_path = get_logo_path()
 
 st.set_page_config(page_title="Sales Bay", page_icon=logo_path, layout="wide", initial_sidebar_state="collapsed")
 
-# --- كود الـ CSS (لإخفاء البهتان، تكبير التابز، وعمل قائمة البروفايل) ---
+# --- كود الـ CSS (لإخفاء البهتان نهائياً، تكبير التابز، وعمل قائمة البروفايل) ---
 custom_css = """
 <style>
 /* إخفاء علامات Streamlit */
@@ -40,13 +40,20 @@ footer {visibility: hidden;}
     font-weight: 700 !important;
 }
 
-/* 🚀 محاولة قوية لقتل بهتان الشاشة (Flicker) 🚀 */
+/* 🚀 الحل الجذري والنهائي لمنع بهتان الشاشة (Flicker) 🚀 */
 .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
     transition: none !important;
+    opacity: 1 !important;
 }
-[data-testid="stStatusWidget"], .stProgress {
+/* إخفاء شريط التحميل، الشاشة الرمادي، وعلامة التحميل تماماً */
+[data-testid="stStatusWidget"], .stProgress, [data-testid="stSkeleton"] {
     display: none !important;
     visibility: hidden !important;
+    opacity: 0 !important;
+}
+.element-container {
+    animation: none !important;
+    transition: none !important;
 }
 
 /* إخفاء أسهم الزيادة والنقصان من الأرقام */
@@ -59,7 +66,7 @@ input[type=number] {
     -moz-appearance: textfield;
 }
 
-/* تظبيط شكل زرار البروفايل ليكون شفاف وشيك */
+/* تظبيط شكل زرار البروفايل */
 [data-testid="stPopover"] button {
     border: 1px solid #ddd !important;
     border-radius: 8px !important;
@@ -173,7 +180,6 @@ if not st.session_state.logged_in:
 else:
     is_admin = (st.session_state.username == "admin")
 
-    # --- الهيدر العلوي (بدون لوجو، والبروفايل كقائمة منسدلة) ---
     col_title, col_space, col_profile = st.columns([8, 1, 2])
     with col_title:
         st.title("Sales Bay Workspace")
@@ -209,7 +215,7 @@ else:
 
         q_data = {}
         is_revision = False
-        selected_q = None  # <-- تم إصلاح الإيرور هنا (تعريف المتغير الأساسي)
+        selected_q = None
 
         if mode == "Revise Existing Quotation":
             is_revision = True
@@ -291,7 +297,7 @@ else:
             with col2:
                 project_name = st.text_input("Project Name", value=get_val('project_name', ""))
                 
-                # --- نظام المحافظات السلس وبدون تهنيج ---
+                # --- التصحيح الذكي للمحافظات (بدون Load إضافي) ---
                 db_location = get_val('location', "")
                 if final_country == "Egypt":
                     if is_revision and db_location not in egypt_govs and db_location != "":
@@ -304,13 +310,14 @@ else:
                     if gov_selection == "Other":
                         custom_gov = st.text_input("Enter Location Name", value=db_location if (is_revision and db_location not in egypt_govs) else "")
                         if custom_gov:
-                            # التصحيح التلقائي الناعم
+                            # تصحيح صامت تماماً
                             matches = difflib.get_close_matches(custom_gov.lower(), [g.lower() for g in egypt_govs], n=1, cutoff=0.55)
                             if matches:
                                 location = next(g for g in egypt_govs if g.lower() == matches[0])
-                                st.info(f"💡 Auto-corrected to: **{location}**")
+                                if location.lower() != custom_gov.lower():
+                                    st.success(f"💡 Auto-corrected to: **{location}**")
                             else:
-                                location = custom_gov # لو مفيش أي تشابه، يسيبها زي ما هي
+                                location = custom_gov # لو مفيش تشابه، يسيبها زي ما هي
                         else:
                             location = ""
                     else:
@@ -338,7 +345,6 @@ else:
             st.info(f"**Quotation Number:** {quotation_no}")
             st.divider()
             
-            # --- العناوين نظيفة وبدون أي لوجوهات/إيموجي ---
             c1, c2 = st.columns(2)
             with c1:
                 st.subheader("Client Info")
@@ -426,7 +432,7 @@ else:
                                      client_email=?, client_address=?, consultant_office=?, consultant_contact=?, 
                                      consultant_mobile=?, consultant_email=?, consultant_address=?, pricing_base=?, 
                                      steel_weight=?, steel_amount=?, total_value=?, items_data=?, status=?
-                                     WHERE quotation_no=?''''',
+                                     WHERE quotation_no=?''',
                                   (str(quote_date), final_country, project_name, location, buildings, scope, client_type, 
                                    client_company, client_contact, client_mobile, client_email, client_address, 
                                    consultant_office, consultant_contact, consultant_mobile, consultant_email, 
