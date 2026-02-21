@@ -8,17 +8,15 @@ import os
 # ==========================================
 # --- إعدادات الصفحة والهوية البصرية ---
 # ==========================================
-# الكود ده بيقرأ اللوجو بتاعك حتى لو اسمه logo.png.png زي ما في الصورة
 logo_path = "logo.png" if os.path.exists("logo.png") else ("logo.png.png" if os.path.exists("logo.png.png") else "🏗️")
 
 st.set_page_config(page_title="Sales Bay", page_icon=logo_path, layout="wide", initial_sidebar_state="expanded")
 
-# كود إخفاء علامات Streamlit بالكامل
+# تم التعديل هنا: شيلنا إخفاء الـ Header عشان سهم القائمة الجانبية يفضل موجود
 hide_streamlit_style = """
             <style>
             #MainMenu {visibility: hidden;}
             footer {visibility: hidden;}
-            header {visibility: hidden;}
             </style>
             """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
@@ -79,7 +77,7 @@ def get_next_serial():
     return max_seq + 1
 
 # ==========================================
-# --- شاشة تسجيل الدخول (Google Style) ---
+# --- شاشة تسجيل الدخول ---
 # ==========================================
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 
@@ -90,7 +88,6 @@ def login_screen():
         st.write("")
         st.write("")
         
-        # تصغير اللوجو في شاشة الـ Login
         col_img1, col_img2, col_img3 = st.columns([1.5, 1, 1.5])
         with col_img2:
             if logo_path != "🏗️":
@@ -147,11 +144,10 @@ if st.sidebar.button("🚪 Logout", use_container_width=True):
     st.session_state.logged_in = False
     st.rerun()
 
-# تكبير اللوجو داخل الصفحات بجودة عالية
 if logo_path != "🏗️":
     c_logo, c_title = st.columns([1.5, 8.5])
     with c_logo:
-        st.image(logo_path, width=180) # المقاس ده هيخليه كبير وواضح جداً
+        st.image(logo_path, width=150)
     with c_title:
         st.title(f"{choice}")
 else:
@@ -334,9 +330,9 @@ elif choice == "Quotation Workspace":
             except: st.session_state['current_items_df'] = pd.DataFrame(columns=default_cols)
         else: st.session_state['current_items_df'] = pd.DataFrame(columns=default_cols)
 
-    old_total_val = st.session_state['current_items_df']['Item Value'].sum() if not st.session_state['current_items_df'].empty else 0.0
-
     st.markdown("*Note: Press **Enter** or click outside the cell after typing to instantly update the 'Item Value'.*")
+    
+    # تم إلغاء كود الـ rerun المسبب للبطء
     edited_items = st.data_editor(
         st.session_state['current_items_df'],
         num_rows="dynamic",
@@ -356,8 +352,6 @@ elif choice == "Quotation Workspace":
     st.session_state['current_items_df'] = edited_items
     new_total_val = edited_items['Item Value'].sum()
     
-    if abs(new_total_val - old_total_val) > 0.001: st.rerun()
-
     items_json = edited_items.to_json(orient='records')
     total_val = float(steel_amount) + float(new_total_val)
 
