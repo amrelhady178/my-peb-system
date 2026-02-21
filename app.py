@@ -4,7 +4,6 @@ import sqlite3
 import json
 from datetime import datetime
 import os
-import difflib
 
 # ==========================================
 # --- إعدادات الصفحة والهوية البصرية ---
@@ -19,14 +18,12 @@ logo_path = get_logo_path()
 
 st.set_page_config(page_title="Sales Bay", page_icon=logo_path, layout="wide", initial_sidebar_state="collapsed")
 
-# --- كود الـ CSS (لإخفاء البهتان نهائياً، تكبير التابز، وعمل قائمة البروفايل) ---
+# --- كود الـ CSS (نظيف جداً وبدون أنيميشن) ---
 custom_css = """
 <style>
-/* إخفاء علامات Streamlit */
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 
-/* تمديد الـ Tabs لتملأ الشاشة بالكامل وتكبير الخط */
 [data-baseweb="tab-list"] {
     display: flex;
     width: 100%;
@@ -40,33 +37,12 @@ footer {visibility: hidden;}
     font-weight: 700 !important;
 }
 
-/* 🚀 الحل الجذري والنهائي لمنع بهتان الشاشة (Flicker) 🚀 */
-.stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
-    transition: none !important;
-    opacity: 1 !important;
-}
-/* إخفاء شريط التحميل، الشاشة الرمادي، وعلامة التحميل تماماً */
+/* إخفاء شريط التحميل نهائياً */
 [data-testid="stStatusWidget"], .stProgress, [data-testid="stSkeleton"] {
     display: none !important;
     visibility: hidden !important;
-    opacity: 0 !important;
-}
-.element-container {
-    animation: none !important;
-    transition: none !important;
 }
 
-/* إخفاء أسهم الزيادة والنقصان من الأرقام */
-input[type=number]::-webkit-inner-spin-button, 
-input[type=number]::-webkit-outer-spin-button { 
-    -webkit-appearance: none; 
-    margin: 0; 
-}
-input[type=number] {
-    -moz-appearance: textfield;
-}
-
-/* تظبيط شكل زرار البروفايل */
 [data-testid="stPopover"] button {
     border: 1px solid #ddd !important;
     border-radius: 8px !important;
@@ -122,12 +98,12 @@ countries_map = {
     "Yemen": "YE", "Zambia": "ZM", "Zimbabwe": "ZW"
 }
 
-egypt_govs = sorted([
+egypt_govs = [
     "Cairo", "Giza", "Alexandria", "Aswan", "Asyut", "Beheira", "Beni Suef", "Dakahlia", 
     "Damietta", "Fayoum", "Gharbia", "Ismailia", "Kafr El Sheikh", "Luxor", "Matrouh", 
     "Minya", "Monufia", "New Valley", "North Sinai", "Port Said", "Qalyubia", "Qena", 
     "Red Sea", "Sharqia", "Sohag", "South Sinai", "Suez"
-])
+]
 
 def get_next_serial():
     conn = sqlite3.connect('peb_system.db')
@@ -195,8 +171,7 @@ else:
     st.write("") 
 
     tabs_titles = ["Dashboard", "Quotation Workspace", "Quotation Log", "Jobs", "Collections"]
-    if is_admin:
-        tabs_titles.extend(["Reports", "KPIs", "Prospect List"])
+    if is_admin: tabs_titles.extend(["Reports", "KPIs", "Prospect List"])
 
     tabs = st.tabs(tabs_titles)
 
@@ -207,9 +182,10 @@ else:
         st.write("Dashboard is under development. Here we will add beautiful charts and summaries later!")
 
     # ==========================================
-    # --- Tab 1: Quotation Workspace ---
+    # --- Tab 1: Quotation Workspace (NO FLICKER FORM) ---
     # ==========================================
     with tabs[1]:
+        # اختيار نوع العملية خارج الفورم عشان الداتا تتحمل
         mode = st.radio("Select Action:", ["Create New Quotation", "Revise Existing Quotation"], horizontal=True, label_visibility="collapsed")
         st.divider()
 
@@ -225,126 +201,66 @@ else:
             
             if not df_quotes.empty:
                 selected_q = st.selectbox("Select Quotation to Revise", df_quotes['quotation_no'])
-                if st.session_state.get('last_q') != selected_q:
-                    st.session_state['last_q'] = selected_q
-                    conn = sqlite3.connect('peb_system.db')
-                    c = conn.cursor()
-                    c.execute("SELECT * FROM quotations WHERE quotation_no=?", (selected_q,))
-                    row = c.fetchone()
-                    col_names = [desc[0] for desc in c.description]
-                    q_data = dict(zip(col_names, row))
-                    conn.close()
-                    if 'current_items_df' in st.session_state: del st.session_state['current_items_df']
-                else:
-                    conn = sqlite3.connect('peb_system.db')
-                    c = conn.cursor()
-                    c.execute("SELECT * FROM quotations WHERE quotation_no=?", (selected_q,))
-                    q_data = dict(zip([desc[0] for desc in c.description], c.fetchone()))
-                    conn.close()
-                    
+                conn = sqlite3.connect('peb_system.db')
+                c = conn.cursor()
+                c.execute("SELECT * FROM quotations WHERE quotation_no=?", (selected_q,))
+                row = c.fetchone()
+                col_names = [desc[0] for desc in c.description]
+                q_data = dict(zip(col_names, row))
+                conn.close()
                 st.info(f"Editing Mode Active for: **{selected_q}**")
             else:
                 st.warning("No quotations available to revise.")
-                st.write("") 
-        else:
-            if st.session_state.get('last_mode') != mode:
-                st.session_state['last_mode'] = mode
-                if 'current_items_df' in st.session_state: del st.session_state['current_items_df']
-                st.session_state['last_q'] = None
+                st.stop()
         
         current_year = datetime.now().year
         def get_val(key, default): return q_data.get(key, default) if is_revision else default
         
-        if not (mode == "Revise Existing Quotation" and not is_revision):
+        # تجهيز القيم المبدئية للفورم
+        db_country = get_val('country', "Egypt")
+        country_list = sorted(list(countries_map.keys()))
+        c_index = country_list.index(db_country) if db_country in country_list else len(country_list)
+        
+        db_loc = get_val('location', "")
+        gov_index = egypt_govs.index(db_loc) if db_loc in egypt_govs else len(egypt_govs)
+
+        # فورم كامل: لا يوجد أي Reload أثناء الكتابة
+        with st.form("quotation_form"):
+            st.markdown("### 📝 Quotation Details")
             col1, col2, col3 = st.columns(3)
             
             with col1:
-                country_list = sorted(list(countries_map.keys()))
-                db_country = get_val('country', "Egypt")
+                # عشان نمنع الـ reload، هنعرض دايما خانة "If Other"
+                country_sel = st.selectbox("Country Territory", country_list + ["Other"], index=c_index)
+                custom_country = st.text_input("If 'Other' Country, write Name:", value=db_country if c_index == len(country_list) else "")
+                custom_cc = st.text_input("If 'Other' Country, write 2-letter Code:", value=q_data.get('quotation_no', '').split('-')[0] if is_revision else "", max_chars=2)
                 
-                if is_revision and db_country not in country_list and db_country != "":
-                    default_index = len(country_list)
-                else:
-                    default_index = country_list.index(db_country) if db_country in country_list else country_list.index("Egypt")
-                    
-                country_selection = st.selectbox("Country Territory", country_list + ["Other"], index=default_index)
-                
-                matched_country = None
-                if country_selection == "Other":
-                    sc_c1, sc_c2 = st.columns([2, 1])
-                    with sc_c1:
-                        final_country_input = st.text_input("Country Name", value=db_country if (is_revision and db_country not in country_list) else "")
-                    matched_country = next((k for k in countries_map.keys() if k.lower() == final_country_input.strip().lower()), None)
-                    with sc_c2:
-                        default_cc = q_data['quotation_no'].split('-')[0] if (is_revision and q_data.get('quotation_no')) else ""
-                        if matched_country:
-                            custom_cc = st.text_input("Code (Auto)", value=countries_map[matched_country], disabled=True)
-                            cc = countries_map[matched_country]
-                            final_country = matched_country
-                        else:
-                            custom_cc = st.text_input("Code", max_chars=2, value=default_cc).upper()
-                            cc = custom_cc if len(custom_cc) == 2 else "XX"
-                            final_country = final_country_input
-                else:
-                    final_country = country_selection
-                    cc = countries_map[country_selection]
-
                 try: default_date = datetime.strptime(get_val('quote_date', str(datetime.now().date())), '%Y-%m-%d').date()
                 except: default_date = datetime.now().date()
                 quote_date = st.date_input("Entry Date", value=default_date)
-                sales_rep = st.text_input("Sales Responsible", value=get_val('sales_rep', st.session_state.username), disabled=True)
                 
             with col2:
                 project_name = st.text_input("Project Name", value=get_val('project_name', ""))
-                
-                # --- التصحيح الذكي للمحافظات (بدون Load إضافي) ---
-                db_location = get_val('location', "")
-                if final_country == "Egypt":
-                    if is_revision and db_location not in egypt_govs and db_location != "":
-                        default_gov_index = len(egypt_govs)
-                    else:
-                        default_gov_index = egypt_govs.index(db_location) if db_location in egypt_govs else 0
-                        
-                    gov_selection = st.selectbox("Project Location", egypt_govs + ["Other"], index=default_gov_index)
-                    
-                    if gov_selection == "Other":
-                        custom_gov = st.text_input("Enter Location Name", value=db_location if (is_revision and db_location not in egypt_govs) else "")
-                        if custom_gov:
-                            # تصحيح صامت تماماً
-                            matches = difflib.get_close_matches(custom_gov.lower(), [g.lower() for g in egypt_govs], n=1, cutoff=0.55)
-                            if matches:
-                                location = next(g for g in egypt_govs if g.lower() == matches[0])
-                                if location.lower() != custom_gov.lower():
-                                    st.success(f"💡 Auto-corrected to: **{location}**")
-                            else:
-                                location = custom_gov # لو مفيش تشابه، يسيبها زي ما هي
-                        else:
-                            location = ""
-                    else:
-                        location = gov_selection
-                else:
-                    location = st.text_input("Project Location", value=db_location)
-
+                location_sel = st.selectbox("Project Location (Egypt Govs)", egypt_govs + ["Other / Outside Egypt"], index=gov_index)
+                custom_loc = st.text_input("If 'Other', write Location Name:", value=db_loc if gov_index == len(egypt_govs) else "")
                 buildings = st.number_input("Number of Buildings", min_value=1, step=1, value=int(get_val('buildings', 1)))
                 
             with col3:
+                sales_rep = st.text_input("Sales Responsible", value=get_val('sales_rep', st.session_state.username), disabled=True)
                 scope = st.selectbox("Scope of Work", ["Supply Only", "Supply & Erection", "Ex-Work"], 
                                      index=["Supply Only", "Supply & Erection", "Ex-Work"].index(get_val('scope', "Supply Only")) if is_revision else 0)
                 pricing_base = st.selectbox("Pricing Base", ["Re-Measurable", "Lump-sum"], 
                                             index=["Re-Measurable", "Lump-sum"].index(get_val('pricing_base', "Re-Measurable")) if is_revision else 0)
                 
+                # استخدام text_input عشان المستخدم يكتب الفواصل براحته
+                sw_val = f"{float(get_val('steel_weight', 0.0)):,.0f}" if is_revision else ""
+                sa_val = f"{float(get_val('steel_amount', 0.0)):,.0f}" if is_revision else ""
+                
                 sc_1, sc_2 = st.columns(2)
-                with sc_1: 
-                    steel_weight = st.number_input("Steel Weight (MT)", min_value=0.0, format="%.0f", value=float(get_val('steel_weight', 0.0)))
-                with sc_2: 
-                    steel_amount = st.number_input("Steel Amount (EGP)", min_value=0.0, format="%.0f", value=float(get_val('steel_amount', 0.0)))
+                with sc_1: steel_weight_str = st.text_input("Steel Weight (MT)", value=sw_val, placeholder="e.g. 1,500")
+                with sc_2: steel_amount_str = st.text_input("Steel Amount (EGP)", value=sa_val, placeholder="e.g. 2,000,000")
 
-            if is_revision: quotation_no = q_data.get('quotation_no', f"{cc}-{get_next_serial():03d}-{current_year}")
-            else: quotation_no = f"{cc}-{get_next_serial():03d}-{current_year}"
-            
-            st.info(f"**Quotation Number:** {quotation_no}")
             st.divider()
-            
             c1, c2 = st.columns(2)
             with c1:
                 st.subheader("Client Info")
@@ -365,91 +281,107 @@ else:
                 consultant_address = st.text_area("Consultant Office Address", value=get_val('consultant_address', ""))
 
             st.divider()
-            
             st.subheader("Other Items")
             item_options = ["Single Skin", "Sandwich Panel", "Standing Seam", "Rain Gutter", "Skylight", 
                             "Wall Light", "Grating", "Chequered Plate", "Metal Decking", "Lifeline", "Ridge Panel", "Other"]
-            default_cols = ["Item", "Description", "Unit", "QTY", "Unit Price", "Item Value"]
+            default_cols = ["Item", "Description", "Unit", "QTY", "Unit Price"] # لغينا عمود الـ Total اللحظي لمنع التهنيج
             
-            if 'current_items_df' not in st.session_state:
-                if is_revision and q_data.get('items_data'):
-                    try:
-                        parsed_data = json.loads(q_data['items_data'])
-                        df = pd.DataFrame(parsed_data) if parsed_data else pd.DataFrame(columns=default_cols)
-                        for col in default_cols:
-                            if col not in df.columns: df[col] = 0.0
-                        st.session_state['current_items_df'] = df
-                    except: st.session_state['current_items_df'] = pd.DataFrame(columns=default_cols)
-                else: st.session_state['current_items_df'] = pd.DataFrame(columns=default_cols)
+            if is_revision and q_data.get('items_data'):
+                try:
+                    df = pd.DataFrame(json.loads(q_data['items_data']))
+                    if 'Item Value' in df.columns: df = df.drop(columns=['Item Value'])
+                    st_df = df
+                except: st_df = pd.DataFrame(columns=default_cols)
+            else: st_df = pd.DataFrame(columns=default_cols)
 
-            st.markdown("*Note: Edit quantities and prices below. Totals will update instantly.*")
-            
+            st.write("*(Type quantities and prices freely. Totals will be calculated automatically upon saving).*")
             edited_items = st.data_editor(
-                st.session_state['current_items_df'],
+                st_df,
                 num_rows="dynamic",
                 column_config={
                     "Item": st.column_config.SelectboxColumn("Item", options=item_options, required=True),
                     "QTY": st.column_config.NumberColumn("QTY", min_value=0.0),
-                    "Unit Price": st.column_config.NumberColumn("Unit Price (Rate)", min_value=0.0),
-                    "Item Value": st.column_config.NumberColumn("Item Value (Auto)", disabled=True)
+                    "Unit Price": st.column_config.NumberColumn("Unit Price (Rate)", min_value=0.0)
                 },
                 use_container_width=True
             )
-
-            edited_items['QTY'] = pd.to_numeric(edited_items['QTY'], errors='coerce').fillna(0)
-            edited_items['Unit Price'] = pd.to_numeric(edited_items['Unit Price'], errors='coerce').fillna(0)
-            edited_items['Item Value'] = edited_items['QTY'] * edited_items['Unit Price']
-            
-            st.session_state['current_items_df'] = edited_items
-            new_total_val = edited_items['Item Value'].sum()
-
-            items_json = edited_items.to_json(orient='records')
-            total_val = float(steel_amount) + float(new_total_val)
-
-            st.success(f"### 💰 Live Grand Total: {total_val:,.0f} EGP")
-            st.write(f"*(Steel: {steel_amount:,.0f} EGP + Other Items: {new_total_val:,.0f} EGP)*")
 
             st.divider()
             status_options = ["In Progress", "Signed", "Hold", "Rejected", "Lost"]
             status = st.selectbox("Quotation Status", status_options, 
                                   index=status_options.index(get_val('status', "In Progress")) if get_val('status', "In Progress") in status_options else 0)
             
-            submit_btn_text = "Update Quotation" if is_revision else "Save New Quotation"
-            submit = st.button(submit_btn_text, type="primary", use_container_width=True)
+            # الزرار اللي بيعمل كل الشغل في الآخر مرة واحدة
+            submit = st.form_submit_button("💾 Save & Calculate Quotation", type="primary", use_container_width=True)
 
-            if submit:
-                if project_name == "" or client_company == "" or final_country == "":
-                    st.error("Please fill in Project Name, Client Company Name, and Country Territory.")
-                elif country_selection == "Other" and not matched_country and len(custom_cc) != 2:
-                    st.error("Please enter exactly 2 letters for the Custom Country Code.")
+        # ==========================================
+        # --- ما يحدث بعد الضغط على Save ---
+        # ==========================================
+        if submit:
+            # 1. تظبيط البلد والكود
+            if country_sel == "Other":
+                final_country = custom_country.strip() if custom_country else "Unknown"
+                cc = custom_cc.strip().upper() if len(custom_cc.strip()) == 2 else "XX"
+            else:
+                final_country = country_sel
+                cc = countries_map[country_sel]
+
+            # 2. تظبيط المحافظة
+            if location_sel == "Other / Outside Egypt":
+                final_loc = custom_loc.strip()
+            else:
+                final_loc = location_sel
+
+            # 3. تنظيف الفلوس من الفواصل
+            try: final_sw = float(steel_weight_str.replace(',', '').strip() or 0.0)
+            except: final_sw = 0.0
+            
+            try: final_sa = float(steel_amount_str.replace(',', '').strip() or 0.0)
+            except: final_sa = 0.0
+
+            # 4. حساب الفلوس للجدول
+            edited_items['QTY'] = pd.to_numeric(edited_items['QTY'], errors='coerce').fillna(0)
+            edited_items['Unit Price'] = pd.to_numeric(edited_items['Unit Price'], errors='coerce').fillna(0)
+            edited_items['Item Value'] = edited_items['QTY'] * edited_items['Unit Price']
+            items_json = edited_items.to_json(orient='records')
+            
+            items_total = edited_items['Item Value'].sum()
+            grand_total = final_sa + items_total
+
+            # 5. الحفظ في الداتا بيز
+            if project_name == "" or client_company == "":
+                st.error("⚠️ Please fill in Project Name and Client Company Name.")
+            else:
+                conn = sqlite3.connect('peb_system.db')
+                c = conn.cursor()
+                
+                if is_revision:
+                    q_no = selected_q
+                    c.execute('''UPDATE quotations SET 
+                                 quote_date=?, country=?, project_name=?, location=?, buildings=?, 
+                                 scope=?, client_type=?, client_company=?, client_contact=?, client_mobile=?, 
+                                 client_email=?, client_address=?, consultant_office=?, consultant_contact=?, 
+                                 consultant_mobile=?, consultant_email=?, consultant_address=?, pricing_base=?, 
+                                 steel_weight=?, steel_amount=?, total_value=?, items_data=?, status=?
+                                 WHERE quotation_no=?''',
+                              (str(quote_date), final_country, project_name, final_loc, buildings, scope, client_type, 
+                               client_company, client_contact, client_mobile, client_email, client_address, 
+                               consultant_office, consultant_contact, consultant_mobile, consultant_email, 
+                               consultant_address, pricing_base, final_sw, final_sa, grand_total, items_json, status, q_no))
+                    st.success(f"✅ Quotation {q_no} Updated successfully! Grand Total: {grand_total:,.0f} EGP")
                 else:
-                    conn = sqlite3.connect('peb_system.db')
-                    c = conn.cursor()
-                    if is_revision:
-                        c.execute('''UPDATE quotations SET 
-                                     quote_date=?, country=?, project_name=?, location=?, buildings=?, 
-                                     scope=?, client_type=?, client_company=?, client_contact=?, client_mobile=?, 
-                                     client_email=?, client_address=?, consultant_office=?, consultant_contact=?, 
-                                     consultant_mobile=?, consultant_email=?, consultant_address=?, pricing_base=?, 
-                                     steel_weight=?, steel_amount=?, total_value=?, items_data=?, status=?
-                                     WHERE quotation_no=?''',
-                                  (str(quote_date), final_country, project_name, location, buildings, scope, client_type, 
-                                   client_company, client_contact, client_mobile, client_email, client_address, 
-                                   consultant_office, consultant_contact, consultant_mobile, consultant_email, 
-                                   consultant_address, pricing_base, steel_weight, steel_amount, total_val, items_json, status, quotation_no))
-                        st.toast(f"✅ Quotation {quotation_no} Updated successfully!")
-                    else:
-                        try:
-                            c.execute('''INSERT INTO quotations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-                                      (quotation_no, str(quote_date), final_country, sales_rep, project_name, location, buildings, 
-                                       scope, client_type, client_company, client_contact, client_mobile, client_email, 
-                                       client_address, consultant_office, consultant_contact, consultant_mobile, consultant_email, 
-                                       consultant_address, pricing_base, steel_weight, steel_amount, total_val, items_json, status))
-                            st.toast(f"✅ Quotation {quotation_no} saved successfully!")
-                        except sqlite3.IntegrityError:
-                            st.error("A quotation with this number already exists.")
-                    conn.commit()
-                    conn.close()
+                    q_no = f"{cc}-{get_next_serial():03d}-{current_year}"
+                    try:
+                        c.execute('''INSERT INTO quotations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                                  (q_no, str(quote_date), final_country, sales_rep, project_name, final_loc, buildings, 
+                                   scope, client_type, client_company, client_contact, client_mobile, client_email, 
+                                   client_address, consultant_office, consultant_contact, consultant_mobile, consultant_email, 
+                                   consultant_address, pricing_base, final_sw, final_sa, grand_total, items_json, status))
+                        st.success(f"✅ Quotation {q_no} saved successfully! Grand Total: {grand_total:,.0f} EGP")
+                    except sqlite3.IntegrityError:
+                        st.error("A quotation with this number already exists.")
+                conn.commit()
+                conn.close()
 
     # ==========================================
     # --- Tab 2: Quotation Log ---
@@ -466,6 +398,7 @@ else:
             df_log = pd.DataFrame()
             df_log['Quote No.'] = df_raw['quotation_no']
             df_log['Project Name'] = df_raw['project_name']
+            df_log['Location'] = df_raw['location']
             df_log['Client Name'] = df_raw['client_company']
             df_log['Sales Name'] = df_raw['sales_rep']
             df_log['Entry Date'] = df_raw['quote_date']
