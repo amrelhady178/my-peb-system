@@ -84,7 +84,7 @@ def get_next_serial():
     return max_seq + 1
 
 # ==========================================
-# --- شاشة تسجيل الدخول ---
+# --- شاشة تسجيل الدخول (الاحترافية) ---
 # ==========================================
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 
@@ -120,51 +120,55 @@ def login_screen():
                 st.error("Invalid Username or Password.")
 
 # ==========================================
-# --- مسار التحكم (Routing) ---
+# --- مسار التحكم والواجهة الداخلية (Tabs) ---
 # ==========================================
 if not st.session_state.logged_in:
     login_screen()
 else:
     is_admin = (st.session_state.username == "admin")
 
-    menu_options = ["Dashboard", "Quotation Workspace", "Quotation Log", "Jobs", "Collections"]
-    if is_admin:
-        menu_options.extend(["Reports", "KPIs", "Prospect List"])
-
+    # القائمة الجانبية (للمعلومات والخروج فقط)
     if logo_path != "🏗️":
         st.sidebar.image(logo_path, use_container_width=True)
 
     st.sidebar.markdown(f"**User:** `{st.session_state.username}`")
     st.sidebar.divider()
-
-    choice = st.sidebar.radio("Main Menu", menu_options)
-
-    st.sidebar.divider()
+    
     if st.sidebar.button("🚪 Logout", use_container_width=True):
         st.session_state.logged_in = False
         st.rerun()
 
+    # الهيدر الأساسي للموقع
     if logo_path != "🏗️":
-        c_logo, c_title = st.columns([1.5, 8.5])
+        c_logo, c_title = st.columns([1, 11])
         with c_logo:
-            st.image(logo_path, width=150)
+            st.image(logo_path, width=80)
         with c_title:
-            st.title(f"{choice}")
+            st.title("Sales Bay Workspace")
     else:
-        st.title(f"{choice}")
-    st.divider()
+        st.title("Sales Bay Workspace")
+    
+    st.write("") # مسافة بسيطة
+
+    # تجهيز التابز بناءً على الصلاحيات
+    tabs_titles = ["📊 Dashboard", "📝 Quotation Workspace", "📋 Quotation Log", "🏗️ Jobs", "💰 Collections"]
+    if is_admin:
+        tabs_titles.extend(["📑 Reports", "📈 KPIs", "🕵️ Prospect List"])
+
+    # إنشاء التابز
+    tabs = st.tabs(tabs_titles)
 
     # ==========================================
-    # --- 1. Dashboard ---
+    # --- Tab 0: Dashboard ---
     # ==========================================
-    if choice == "Dashboard":
+    with tabs[0]:
+        st.header("Dashboard")
         st.info("🚀 Dashboard is under development. Here we will add beautiful charts and summaries later!")
 
     # ==========================================
-    # --- 2. Quotation Workspace ---
+    # --- Tab 1: Quotation Workspace ---
     # ==========================================
-    elif choice == "Quotation Workspace":
-        
+    with tabs[1]:
         mode = st.radio("Select Action:", ["Create New Quotation", "Revise Existing Quotation"], horizontal=True)
         st.divider()
 
@@ -378,9 +382,10 @@ else:
                     conn.close()
 
     # ==========================================
-    # --- 3. Quotation Log ---
+    # --- Tab 2: Quotation Log ---
     # ==========================================
-    elif choice == "Quotation Log":
+    with tabs[2]:
+        st.header("Quotation Log")
         conn = sqlite3.connect('peb_system.db')
         if is_admin: query = "SELECT * FROM quotations ORDER BY quotation_no DESC"
         else: query = f"SELECT * FROM quotations WHERE sales_rep='{st.session_state.username}' ORDER BY quotation_no DESC"
@@ -416,57 +421,57 @@ else:
             st.info("No quotations found yet.")
 
     # ==========================================
-    # --- 4. Jobs ---
+    # --- Tab 3: Jobs ---
     # ==========================================
-    elif choice == "Jobs":
+    with tabs[3]:
+        st.header("Jobs")
         st.info("🏗️ The Jobs Module will automatically pull all 'Signed' projects here. (Under Construction)")
 
     # ==========================================
-    # --- 5. Collections ---
+    # --- Tab 4: Collections ---
     # ==========================================
-    elif choice == "Collections":
+    with tabs[4]:
+        st.header("Collections")
         if is_admin: st.success("💰 **Admin View:** You have full access to view and edit collections for ALL projects and Sales Reps.")
         else: st.info(f"💰 **Sales View:** You can only view and update collections for projects assigned to **{st.session_state.username}**.")
         st.write("(Module under construction)")
 
     # ==========================================
-    # --- 6. Reports (Admin Only) ---
+    # --- Tabs 5, 6, 7 (Admin Only) ---
     # ==========================================
-    elif choice == "Reports":
-        st.info("📊 Reports Module: Export data and generate full Excel/PDF summaries. (Under Construction)")
-
-    # ==========================================
-    # --- 7. KPIs (Admin Only) ---
-    # ==========================================
-    elif choice == "KPIs":
-        st.info("📈 KPIs Module: View Hit Rates, Total Tonnage, and Sales Performance. (Under Construction)")
-
-    # ==========================================
-    # --- 8. Prospect List (Admin Only) ---
-    # ==========================================
-    elif choice == "Prospect List":
-        st.markdown("This list automatically extracts and organizes all client and consultant contacts from your quotations.")
-        conn = sqlite3.connect('peb_system.db')
-        
-        df_clients = pd.read_sql_query('''
-            SELECT DISTINCT client_contact as "Contact Name", client_company as "Company / Office",
-                   client_mobile as "Mobile", client_email as "Email", client_address as "Address", 'Client' as "Type"
-            FROM quotations WHERE client_company != ''
-        ''', conn)
-        df_consultants = pd.read_sql_query('''
-            SELECT DISTINCT consultant_contact as "Contact Name", consultant_office as "Company / Office",
-                   consultant_mobile as "Mobile", consultant_email as "Email", consultant_address as "Address", 'Consultant' as "Type"
-            FROM quotations WHERE consultant_office != ''
-        ''', conn)
-        conn.close()
-        
-        if not df_clients.empty or not df_consultants.empty:
-            df_prospects = pd.concat([df_clients, df_consultants], ignore_index=True).drop_duplicates(subset=["Company / Office", "Contact Name"])
-            def style_type(val):
-                if val == 'Client': return 'background-color: #17a2b8; color: white'
-                if val == 'Consultant': return 'background-color: #6c757d; color: white'
-                return ''
-            styled_prospects = df_prospects.style.map(style_type, subset=['Type'])
-            st.dataframe(styled_prospects, use_container_width=True, hide_index=True)
-        else:
-            st.info("No prospect data available yet.")
+    if is_admin:
+        with tabs[5]: # Reports
+            st.header("Reports")
+            st.info("📊 Reports Module: Export data and generate full Excel/PDF summaries. (Under Construction)")
+            
+        with tabs[6]: # KPIs
+            st.header("KPIs")
+            st.info("📈 KPIs Module: View Hit Rates, Total Tonnage, and Sales Performance. (Under Construction)")
+            
+        with tabs[7]: # Prospect List
+            st.header("Prospect List")
+            st.markdown("This list automatically extracts and organizes all client and consultant contacts from your quotations.")
+            conn = sqlite3.connect('peb_system.db')
+            
+            df_clients = pd.read_sql_query('''
+                SELECT DISTINCT client_contact as "Contact Name", client_company as "Company / Office",
+                       client_mobile as "Mobile", client_email as "Email", client_address as "Address", 'Client' as "Type"
+                FROM quotations WHERE client_company != ''
+            ''', conn)
+            df_consultants = pd.read_sql_query('''
+                SELECT DISTINCT consultant_contact as "Contact Name", consultant_office as "Company / Office",
+                       consultant_mobile as "Mobile", consultant_email as "Email", consultant_address as "Address", 'Consultant' as "Type"
+                FROM quotations WHERE consultant_office != ''
+            ''', conn)
+            conn.close()
+            
+            if not df_clients.empty or not df_consultants.empty:
+                df_prospects = pd.concat([df_clients, df_consultants], ignore_index=True).drop_duplicates(subset=["Company / Office", "Contact Name"])
+                def style_type(val):
+                    if val == 'Client': return 'background-color: #17a2b8; color: white'
+                    if val == 'Consultant': return 'background-color: #6c757d; color: white'
+                    return ''
+                styled_prospects = df_prospects.style.map(style_type, subset=['Type'])
+                st.dataframe(styled_prospects, use_container_width=True, hide_index=True)
+            else:
+                st.info("No prospect data available yet.")
