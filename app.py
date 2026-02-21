@@ -188,6 +188,7 @@ else:
                     col_names = [desc[0] for desc in c.description]
                     q_data = dict(zip(col_names, row))
                     conn.close()
+                    if 'current_items_df' in st.session_state: del st.session_state['current_items_df']
                 else:
                     conn = sqlite3.connect('peb_system.db')
                     c = conn.cursor()
@@ -202,6 +203,7 @@ else:
         else:
             if st.session_state.get('last_mode') != mode:
                 st.session_state['last_mode'] = mode
+                if 'current_items_df' in st.session_state: del st.session_state['current_items_df']
                 st.session_state['last_q'] = None
         
         current_year = datetime.now().year
@@ -258,7 +260,6 @@ else:
                                             index=["Re-Measurable", "Lump-sum"].index(get_val('pricing_base', "Re-Measurable")) if is_revision else 0)
                 
                 sc_1, sc_2 = st.columns(2)
-                # استخدام number_input الأصلي عشان نمنع البطء، وهيعمل فواصل ألوف أوتوماتيك ويخفي الكسور بفضل format="%.0f"
                 with sc_1: 
                     steel_weight = st.number_input("Steel Weight (MT)", min_value=0.0, step=1.0, format="%.0f", value=float(get_val('steel_weight', 0.0)))
                 with sc_2: 
@@ -294,37 +295,40 @@ else:
             st.subheader("🛠️ Other Items")
             item_options = ["Single Skin", "Sandwich Panel", "Standing Seam", "Rain Gutter", "Skylight", 
                             "Wall Light", "Grating", "Chequered Plate", "Metal Decking", "Lifeline", "Ridge Panel", "Other"]
-            default_cols = ["Item", "Description", "Unit", "QTY", "Unit Price"]
+            default_cols = ["Item", "Description", "Unit", "QTY", "Unit Price", "Item Value"]
             
-            # بناء الداتا المبدئية للجدول
-            if is_revision and q_data.get('items_data'):
-                try:
-                    df_initial = pd.DataFrame(json.loads(q_data['items_data']))
-                    for col in default_cols:
-                        if col not in df_initial.columns: df_initial[col] = 0.0
-                except: df_initial = pd.DataFrame(columns=default_cols)
-            else: df_initial = pd.DataFrame(columns=default_cols)
+            if 'current_items_df' not in st.session_state:
+                if is_revision and q_data.get('items_data'):
+                    try:
+                        parsed_data = json.loads(q_data['items_data'])
+                        df = pd.DataFrame(parsed_data) if parsed_data else pd.DataFrame(columns=default_cols)
+                        for col in default_cols:
+                            if col not in df.columns: df[col] = 0.0
+                        st.session_state['current_items_df'] = df
+                    except: st.session_state['current_items_df'] = pd.DataFrame(columns=default_cols)
+                else: st.session_state['current_items_df'] = pd.DataFrame(columns=default_cols)
 
             st.markdown("*Note: Edit quantities and prices below. Totals will update instantly.*")
             
-            # عرض الجدول بطريقة خفيفة ومباشرة بدون Loops
             edited_items = st.data_editor(
-                df_initial,
+                st.session_state['current_items_df'],
                 num_rows="dynamic",
                 column_config={
                     "Item": st.column_config.SelectboxColumn("Item", options=item_options, required=True),
                     "QTY": st.column_config.NumberColumn("QTY", min_value=0.0),
-                    "Unit Price": st.column_config.NumberColumn("Unit Price (Rate)", min_value=0.0)
+                    "Unit Price": st.column_config.NumberColumn("Unit Price (Rate)", min_value=0.0),
+                    "Item Value": st.column_config.NumberColumn("Item Value (Auto)", disabled=True)
                 },
                 use_container_width=True
             )
 
-            # الحسابات اللحظية بدون حفظ في session_state معقد
             edited_items['QTY'] = pd.to_numeric(edited_items['QTY'], errors='coerce').fillna(0)
             edited_items['Unit Price'] = pd.to_numeric(edited_items['Unit Price'], errors='coerce').fillna(0)
             edited_items['Item Value'] = edited_items['QTY'] * edited_items['Unit Price']
             
+            st.session_state['current_items_df'] = edited_items
             new_total_val = edited_items['Item Value'].sum()
+
             items_json = edited_items.to_json(orient='records')
             total_val = float(steel_amount) + float(new_total_val)
 
