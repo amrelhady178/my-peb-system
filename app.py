@@ -16,15 +16,53 @@ def get_logo_path():
 
 logo_path = get_logo_path()
 
-st.set_page_config(page_title="Sales Bay", page_icon=logo_path, layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Sales Bay", page_icon=logo_path, layout="wide", initial_sidebar_state="collapsed")
 
-hide_streamlit_style = """
-            <style>
-            #MainMenu {visibility: hidden;}
-            footer {visibility: hidden;}
-            </style>
-            """
-st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+# --- كود الـ CSS السحري (لإخفاء البهتان، تمديد التابز، وإخفاء الأسهم من الأرقام) ---
+custom_css = """
+<style>
+/* إخفاء علامات Streamlit */
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+
+/* تمديد الـ Tabs لتملأ الشاشة بالكامل */
+[data-baseweb="tab-list"] {
+    display: flex;
+    width: 100%;
+}
+[data-baseweb="tab"] {
+    flex-grow: 1;
+    justify-content: center;
+    font-size: 16px;
+    font-weight: bold;
+}
+
+/* 🚀 قتل بهتان الشاشة (Flicker) أثناء الحسابات اللحظية 🚀 */
+.stApp [data-testid="stAppViewContainer"] {
+    opacity: 1 !important;
+    transition: none !important;
+}
+.stApp [data-testid="stHeader"] {
+    opacity: 1 !important;
+    transition: none !important;
+}
+/* إخفاء علامة التحميل (Running Man) */
+[data-testid="stStatusWidget"] {
+    visibility: hidden !important;
+}
+
+/* إخفاء أسهم الزيادة والنقصان من خانات الأرقام لشكل أنظف */
+input[type=number]::-webkit-inner-spin-button, 
+input[type=number]::-webkit-outer-spin-button { 
+    -webkit-appearance: none; 
+    margin: 0; 
+}
+input[type=number] {
+    -moz-appearance: textfield;
+}
+</style>
+"""
+st.markdown(custom_css, unsafe_allow_html=True)
 
 # ==========================================
 # --- قاعدة البيانات ---
@@ -84,7 +122,7 @@ def get_next_serial():
     return max_seq + 1
 
 # ==========================================
-# --- شاشة تسجيل الدخول (الاحترافية) ---
+# --- شاشة تسجيل الدخول (نظيفة واحترافية) ---
 # ==========================================
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 
@@ -94,16 +132,9 @@ def login_screen():
         st.write("")
         st.write("")
         st.write("")
-        
-        col_img1, col_img2, col_img3 = st.columns([1.5, 1, 1.5])
-        with col_img2:
-            if logo_path != "🏗️":
-                st.image(logo_path, use_container_width=True)
-            else:
-                st.markdown("<h2 style='text-align: center;'>SB</h2>", unsafe_allow_html=True)
-                
-        st.markdown("<h2 style='text-align: center; margin-bottom: 0px;'>Sign in</h2>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center; color: gray; margin-top: 0px;'>Continue to Sales Bay</p>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center; color: #333;'>Sales Bay</h1>", unsafe_allow_html=True)
+        st.markdown("<h3 style='text-align: center; margin-bottom: 0px;'>Sign in</h3>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: gray; margin-top: 0px;'>Continue to your workspace</p>", unsafe_allow_html=True)
         
         st.write("")
         user = st.text_input("Username", placeholder="Enter your username")
@@ -120,56 +151,43 @@ def login_screen():
                 st.error("Invalid Username or Password.")
 
 # ==========================================
-# --- مسار التحكم والواجهة الداخلية (Tabs) ---
+# --- مسار التحكم والواجهة الداخلية ---
 # ==========================================
 if not st.session_state.logged_in:
     login_screen()
 else:
     is_admin = (st.session_state.username == "admin")
 
-    # القائمة الجانبية (للمعلومات والخروج فقط)
-    if logo_path != "🏗️":
-        st.sidebar.image(logo_path, use_container_width=True)
-
-    st.sidebar.markdown(f"**User:** `{st.session_state.username}`")
-    st.sidebar.divider()
-    
-    if st.sidebar.button("🚪 Logout", use_container_width=True):
-        st.session_state.logged_in = False
-        st.rerun()
-
-    # الهيدر الأساسي للموقع
-    if logo_path != "🏗️":
-        c_logo, c_title = st.columns([1, 11])
-        with c_logo:
-            st.image(logo_path, width=80)
-        with c_title:
-            st.title("Sales Bay Workspace")
-    else:
+    # --- الهيدر العلوي (العنوان + البروفايل) ---
+    col_title, col_space, col_profile = st.columns([8, 1, 2])
+    with col_title:
         st.title("Sales Bay Workspace")
+    with col_profile:
+        st.markdown(f"<div style='text-align: right; margin-top: 15px;'>👤 <b>{st.session_state.username}</b></div>", unsafe_allow_html=True)
+        if st.button("Logout", use_container_width=True):
+            st.session_state.logged_in = False
+            st.rerun()
     
     st.write("") # مسافة بسيطة
 
-    # تجهيز التابز بناءً على الصلاحيات
-    tabs_titles = ["📊 Dashboard", "📝 Quotation Workspace", "📋 Quotation Log", "🏗️ Jobs", "💰 Collections"]
+    # --- تجهيز الـ Tabs بدون إيموجي ---
+    tabs_titles = ["Dashboard", "Quotation Workspace", "Quotation Log", "Jobs", "Collections"]
     if is_admin:
-        tabs_titles.extend(["📑 Reports", "📈 KPIs", "🕵️ Prospect List"])
+        tabs_titles.extend(["Reports", "KPIs", "Prospect List"])
 
-    # إنشاء التابز
     tabs = st.tabs(tabs_titles)
 
     # ==========================================
     # --- Tab 0: Dashboard ---
     # ==========================================
     with tabs[0]:
-        st.header("Dashboard")
-        st.info("🚀 Dashboard is under development. Here we will add beautiful charts and summaries later!")
+        st.write("Dashboard is under development. Here we will add beautiful charts and summaries later!")
 
     # ==========================================
     # --- Tab 1: Quotation Workspace ---
     # ==========================================
     with tabs[1]:
-        mode = st.radio("Select Action:", ["Create New Quotation", "Revise Existing Quotation"], horizontal=True)
+        mode = st.radio("Select Action:", ["Create New Quotation", "Revise Existing Quotation"], horizontal=True, label_visibility="collapsed")
         st.divider()
 
         q_data = {}
@@ -265,9 +283,9 @@ else:
                 
                 sc_1, sc_2 = st.columns(2)
                 with sc_1: 
-                    steel_weight = st.number_input("Steel Weight (MT)", min_value=0.0, step=1.0, format="%.0f", value=float(get_val('steel_weight', 0.0)))
+                    steel_weight = st.number_input("Steel Weight (MT)", min_value=0.0, format="%.0f", value=float(get_val('steel_weight', 0.0)))
                 with sc_2: 
-                    steel_amount = st.number_input("Steel Amount (EGP)", min_value=0.0, step=100.0, format="%.0f", value=float(get_val('steel_amount', 0.0)))
+                    steel_amount = st.number_input("Steel Amount (EGP)", min_value=0.0, format="%.0f", value=float(get_val('steel_amount', 0.0)))
 
             if is_revision: quotation_no = q_data.get('quotation_no', f"{cc}-{get_next_serial():03d}-{current_year}")
             else: quotation_no = f"{cc}-{get_next_serial():03d}-{current_year}"
@@ -367,7 +385,7 @@ else:
                                    client_company, client_contact, client_mobile, client_email, client_address, 
                                    consultant_office, consultant_contact, consultant_mobile, consultant_email, 
                                    consultant_address, pricing_base, steel_weight, steel_amount, total_val, items_json, status, quotation_no))
-                        st.success(f"✅ Quotation {quotation_no} Updated successfully!")
+                        st.toast(f"✅ Quotation {quotation_no} Updated successfully!")
                     else:
                         try:
                             c.execute('''INSERT INTO quotations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
@@ -375,7 +393,7 @@ else:
                                        scope, client_type, client_company, client_contact, client_mobile, client_email, 
                                        client_address, consultant_office, consultant_contact, consultant_mobile, consultant_email, 
                                        consultant_address, pricing_base, steel_weight, steel_amount, total_val, items_json, status))
-                            st.success(f"✅ Quotation {quotation_no} saved successfully!")
+                            st.toast(f"✅ Quotation {quotation_no} saved successfully!")
                         except sqlite3.IntegrityError:
                             st.error("A quotation with this number already exists.")
                     conn.commit()
@@ -385,7 +403,6 @@ else:
     # --- Tab 2: Quotation Log ---
     # ==========================================
     with tabs[2]:
-        st.header("Quotation Log")
         conn = sqlite3.connect('peb_system.db')
         if is_admin: query = "SELECT * FROM quotations ORDER BY quotation_no DESC"
         else: query = f"SELECT * FROM quotations WHERE sales_rep='{st.session_state.username}' ORDER BY quotation_no DESC"
@@ -424,14 +441,12 @@ else:
     # --- Tab 3: Jobs ---
     # ==========================================
     with tabs[3]:
-        st.header("Jobs")
         st.info("🏗️ The Jobs Module will automatically pull all 'Signed' projects here. (Under Construction)")
 
     # ==========================================
     # --- Tab 4: Collections ---
     # ==========================================
     with tabs[4]:
-        st.header("Collections")
         if is_admin: st.success("💰 **Admin View:** You have full access to view and edit collections for ALL projects and Sales Reps.")
         else: st.info(f"💰 **Sales View:** You can only view and update collections for projects assigned to **{st.session_state.username}**.")
         st.write("(Module under construction)")
@@ -441,15 +456,12 @@ else:
     # ==========================================
     if is_admin:
         with tabs[5]: # Reports
-            st.header("Reports")
             st.info("📊 Reports Module: Export data and generate full Excel/PDF summaries. (Under Construction)")
             
         with tabs[6]: # KPIs
-            st.header("KPIs")
             st.info("📈 KPIs Module: View Hit Rates, Total Tonnage, and Sales Performance. (Under Construction)")
             
         with tabs[7]: # Prospect List
-            st.header("Prospect List")
             st.markdown("This list automatically extracts and organizes all client and consultant contacts from your quotations.")
             conn = sqlite3.connect('peb_system.db')
             
