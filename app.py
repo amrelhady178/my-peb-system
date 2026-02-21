@@ -4,7 +4,7 @@ import sqlite3
 import json
 from datetime import datetime
 import os
-import difflib  # تم الإضافة عشان الذكاء الاصطناعي في استنتاج الحروف (Fuzzy Matching)
+import difflib # المكتبة دي الخاصة بالذكاء الاصطناعي لتصحيح الحروف
 
 # ==========================================
 # --- إعدادات الصفحة والهوية البصرية ---
@@ -19,7 +19,7 @@ logo_path = get_logo_path()
 
 st.set_page_config(page_title="Sales Bay", page_icon=logo_path, layout="wide", initial_sidebar_state="collapsed")
 
-# --- كود الـ CSS (لإخفاء البهتان، تكبير التابز، وعمل قائمة البروفايل) ---
+# --- كود الـ CSS (لإخفاء البهتان بقوة، وتكبير التابز) ---
 custom_css = """
 <style>
 /* إخفاء علامات Streamlit */
@@ -40,15 +40,20 @@ footer {visibility: hidden;}
     font-weight: 700 !important;
 }
 
-/* 🚀 قتل بهتان الشاشة (Flicker) نهائياً 🚀 */
-.stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
+/* 🚀 الحل الجذري والنهائي لمنع بهتان الشاشة (Flicker) 🚀 */
+[data-testid="stAppViewBlockContainer"] {
     opacity: 1 !important;
     transition: none !important;
-    filter: none !important;
+    filter: blur(0px) !important;
 }
-[data-testid="stStatusWidget"] {
-    visibility: hidden !important;
+.stApp {
+    background-color: transparent !important;
+}
+/* إخفاء شريط التحميل وعلامة الجري تماماً */
+[data-testid="stStatusWidget"], .stProgress {
     display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
 }
 
 /* إخفاء أسهم الزيادة والنقصان من الأرقام */
@@ -61,7 +66,7 @@ input[type=number] {
     -moz-appearance: textfield;
 }
 
-/* تظبيط شكل زرار البروفايل ليكون شفاف */
+/* تظبيط شكل زرار البروفايل ليكون شفاف وشيك */
 [data-testid="stPopover"] button {
     border: 1px solid #ddd !important;
     border-radius: 8px !important;
@@ -117,7 +122,6 @@ countries_map = {
     "Yemen": "YE", "Zambia": "ZM", "Zimbabwe": "ZW"
 }
 
-# قائمة محافظات مصر
 egypt_govs = sorted([
     "Cairo", "Giza", "Alexandria", "Aswan", "Asyut", "Beheira", "Beni Suef", "Dakahlia", 
     "Damietta", "Fayoum", "Gharbia", "Ismailia", "Kafr El Sheikh", "Luxor", "Matrouh", 
@@ -181,8 +185,7 @@ else:
     with col_title:
         st.title("Sales Bay Workspace")
     with col_profile:
-        st.write("") # لضبط المسافة
-        # نظام الـ Popover (قائمة منسدلة للبروفايل)
+        st.write("") 
         with st.popover(f"👤 {st.session_state.username}"):
             st.markdown(f"Signed in as: **{st.session_state.username}**")
             st.divider()
@@ -252,6 +255,16 @@ else:
         current_year = datetime.now().year
         def get_val(key, default): return q_data.get(key, default) if is_revision else default
         
+        # --- دالة التصحيح التلقائي للمحافظات (Auto Correct Location) ---
+        def auto_correct_location():
+            val = st.session_state.get('loc_input', '')
+            if val:
+                matches = difflib.get_close_matches(val.lower(), [g.lower() for g in egypt_govs], n=1, cutoff=0.55)
+                if matches:
+                    matched_gov = next(g for g in egypt_govs if g.lower() == matches[0])
+                    st.session_state['loc_input'] = matched_gov
+                # لو مش شبه حاجة، السيستم هيسيبها زي ما هي بالظبط (بدون أي تعديل)
+
         if not (mode == "Revise Existing Quotation" and not is_revision):
             col1, col2, col3 = st.columns(3)
             
@@ -294,34 +307,28 @@ else:
             with col2:
                 project_name = st.text_input("Project Name", value=get_val('project_name', ""))
                 
-                # --- نظام المحافظات الذكي (مصر) ---
+                # --- تطبيق نظام المحافظات ---
                 db_location = get_val('location', "")
                 if final_country == "Egypt":
                     if is_revision and db_location not in egypt_govs and db_location != "":
-                        default_gov_index = len(egypt_govs) # Other
+                        default_gov_index = len(egypt_govs)
                     else:
                         default_gov_index = egypt_govs.index(db_location) if db_location in egypt_govs else 0
                         
-                    gov_selection = st.selectbox("Project Location (Governorate)", egypt_govs + ["Other"], index=default_gov_index)
+                    gov_selection = st.selectbox("Project Location", egypt_govs + ["Other"], index=default_gov_index)
                     
                     if gov_selection == "Other":
-                        custom_gov = st.text_input("Enter Governorate Name", value=db_location if (is_revision and db_location not in egypt_govs) else "")
-                        if custom_gov:
-                            # الذكاء الاصطناعي للبحث عن أقرب محافظة من الحروف (Fuzzy Matching)
-                            matches = difflib.get_close_matches(custom_gov.lower(), [g.lower() for g in egypt_govs], n=1, cutoff=0.7)
-                            if matches:
-                                matched_gov = next(g for g in egypt_govs if g.lower() == matches[0])
-                                st.info(f"💡 Auto-corrected to: **{matched_gov}**")
-                                location = matched_gov
-                            else:
-                                location = custom_gov
-                        else:
-                            location = ""
+                        if st.session_state.get('prev_quote_for_loc') != selected_q:
+                            st.session_state['loc_input'] = db_location if (is_revision and db_location not in egypt_govs) else ""
+                            st.session_state['prev_quote_for_loc'] = selected_q
+                            
+                        st.text_input("Enter Location Name", key="loc_input", on_change=auto_correct_location)
+                        location = st.session_state.get('loc_input', '')
                     else:
                         location = gov_selection
                 else:
                     location = st.text_input("Project Location", value=db_location)
-                
+
                 buildings = st.number_input("Number of Buildings", min_value=1, step=1, value=int(get_val('buildings', 1)))
                 
             with col3:
@@ -342,7 +349,7 @@ else:
             st.info(f"**Quotation Number:** {quotation_no}")
             st.divider()
             
-            # --- شيلنا الإيموجيز من العناوين ---
+            # --- العناوين نظيفة وبدون أي لوجوهات/إيموجي ---
             c1, c2 = st.columns(2)
             with c1:
                 st.subheader("Client Info")
