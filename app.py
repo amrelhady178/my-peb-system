@@ -8,7 +8,10 @@ import os
 # ==========================================
 # --- إعدادات الصفحة والهوية البصرية ---
 # ==========================================
-st.set_page_config(page_title="Sales Bay", page_icon="logo.png", layout="wide", initial_sidebar_state="expanded")
+# الكود ده بيقرأ اللوجو بتاعك حتى لو اسمه logo.png.png زي ما في الصورة
+logo_path = "logo.png" if os.path.exists("logo.png") else ("logo.png.png" if os.path.exists("logo.png.png") else "🏗️")
+
+st.set_page_config(page_title="Sales Bay", page_icon=logo_path, layout="wide", initial_sidebar_state="expanded")
 
 # كود إخفاء علامات Streamlit بالكامل
 hide_streamlit_style = """
@@ -81,19 +84,16 @@ def get_next_serial():
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 
 def login_screen():
-    # استخدام عواميد عشان نخلي الفورم في النص بالظبط بمساحة صغيرة
     col1, col2, col3 = st.columns([1, 1.2, 1])
     with col2:
         st.write("")
         st.write("")
         st.write("")
         
-        # وضع اللوجو بحجم صغير في المنتصف
-        logo_path = "logo.png" if os.path.exists("logo.png") else ("logo.jpg" if os.path.exists("logo.jpg") else None)
-        
-        col_img1, col_img2, col_img3 = st.columns([1, 1, 1])
+        # تصغير اللوجو في شاشة الـ Login
+        col_img1, col_img2, col_img3 = st.columns([1.5, 1, 1.5])
         with col_img2:
-            if logo_path:
+            if logo_path != "🏗️":
                 st.image(logo_path, use_container_width=True)
             else:
                 st.markdown("<h2 style='text-align: center;'>SB</h2>", unsafe_allow_html=True)
@@ -124,7 +124,6 @@ if not st.session_state.logged_in:
 # ==========================================
 is_admin = (st.session_state.username == "admin")
 
-# بناء القائمة بناءً على الصلاحيات
 menu_options = [
     "Dashboard", 
     "Quotation Workspace", 
@@ -135,15 +134,12 @@ menu_options = [
 if is_admin:
     menu_options.extend(["Reports", "KPIs", "Prospect List"])
 
-# اللوجو في القائمة الجانبية
-logo_path = "logo.png" if os.path.exists("logo.png") else ("logo.jpg" if os.path.exists("logo.jpg") else None)
-if logo_path:
+if logo_path != "🏗️":
     st.sidebar.image(logo_path, use_container_width=True)
 
 st.sidebar.markdown(f"**User:** `{st.session_state.username}`")
 st.sidebar.divider()
 
-# القائمة الرئيسية (Menu)
 choice = st.sidebar.radio("Main Menu", menu_options)
 
 st.sidebar.divider()
@@ -151,11 +147,11 @@ if st.sidebar.button("🚪 Logout", use_container_width=True):
     st.session_state.logged_in = False
     st.rerun()
 
-# اللوجو الداخلي بأعلى جودة (150 بيكسل)
-if logo_path:
+# تكبير اللوجو داخل الصفحات بجودة عالية
+if logo_path != "🏗️":
     c_logo, c_title = st.columns([1.5, 8.5])
     with c_logo:
-        st.image(logo_path, width=150)
+        st.image(logo_path, width=180) # المقاس ده هيخليه كبير وواضح جداً
     with c_title:
         st.title(f"{choice}")
 else:
@@ -373,7 +369,8 @@ elif choice == "Quotation Workspace":
     status = st.selectbox("Quotation Status", status_options, 
                           index=status_options.index(get_val('status', "In Progress")) if get_val('status', "In Progress") in status_options else 0)
     
-    submit = st.button("Update Quotation" if is_revision else "Save New Quotation", type="primary", use_container_width=True)
+    submit_btn_text = "Update Quotation" if is_revision else "Save New Quotation"
+    submit = st.button(submit_btn_text, type="primary", use_container_width=True)
 
     if submit:
         if project_name == "" or client_company == "" or final_country == "":
@@ -415,7 +412,6 @@ elif choice == "Quotation Workspace":
 elif choice == "Quotation Log":
     conn = sqlite3.connect('peb_system.db')
     
-    # فلترة العروض: السيلز يشوف بتاعته بس، الأدمن يشوف كله
     if is_admin:
         query = "SELECT * FROM quotations ORDER BY quotation_no DESC"
     else:
