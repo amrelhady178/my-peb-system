@@ -8,7 +8,6 @@ import os
 # ==========================================
 # --- إعدادات الصفحة والهوية البصرية ---
 # ==========================================
-# سحب اللوجو لمرة واحدة فقط لتخفيف الحمل
 @st.cache_data
 def get_logo_path():
     if os.path.exists("logo.png"): return "logo.png"
@@ -28,7 +27,7 @@ hide_streamlit_style = """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # ==========================================
-# --- قاعدة البيانات (محمية بالكاش لمنع البطء) ---
+# --- قاعدة البيانات ---
 # ==========================================
 @st.cache_resource
 def setup_database():
@@ -51,7 +50,6 @@ def setup_database():
     conn.close()
     return True
 
-# استدعاء الداتا بيز لمرة واحدة فقط
 setup_database()
 
 countries_map = {
@@ -86,7 +84,7 @@ def get_next_serial():
     return max_seq + 1
 
 # ==========================================
-# --- شاشة تسجيل الدخول (Google Style) ---
+# --- شاشة تسجيل الدخول ---
 # ==========================================
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 
@@ -127,18 +125,9 @@ def login_screen():
 if not st.session_state.logged_in:
     login_screen()
 else:
-    # ==========================================
-    # --- الواجهة الداخلية (نظام الـ Menu) ---
-    # ==========================================
     is_admin = (st.session_state.username == "admin")
 
-    menu_options = [
-        "Dashboard", 
-        "Quotation Workspace", 
-        "Quotation Log", 
-        "Jobs", 
-        "Collections"
-    ]
+    menu_options = ["Dashboard", "Quotation Workspace", "Quotation Log", "Jobs", "Collections"]
     if is_admin:
         menu_options.extend(["Reports", "KPIs", "Prospect List"])
 
@@ -181,17 +170,6 @@ else:
 
         q_data = {}
         is_revision = False
-        selected_q = None
-
-        def format_money():
-            try:
-                val_a = str(st.session_state.sa_input).replace(',', '')
-                if val_a: st.session_state.sa_input = f"{float(val_a):,.0f}"
-            except: pass
-            try:
-                val_w = str(st.session_state.sw_input).replace(',', '')
-                if val_w: st.session_state.sw_input = f"{float(val_w):,.0f}"
-            except: pass
 
         if mode == "Revise Existing Quotation":
             is_revision = True
@@ -210,10 +188,6 @@ else:
                     col_names = [desc[0] for desc in c.description]
                     q_data = dict(zip(col_names, row))
                     conn.close()
-                    
-                    st.session_state['sa_input'] = f"{float(q_data.get('steel_amount', 0)):,.0f}"
-                    st.session_state['sw_input'] = f"{float(q_data.get('steel_weight', 0)):,.0f}"
-                    if 'current_items_df' in st.session_state: del st.session_state['current_items_df']
                 else:
                     conn = sqlite3.connect('peb_system.db')
                     c = conn.cursor()
@@ -224,20 +198,15 @@ else:
                 st.info(f"Editing Mode Active for: **{selected_q}**")
             else:
                 st.warning("No quotations available to revise.")
-                # تم استبدال st.stop اللي كانت بتبطأ بـ return فاضي
                 st.write("") 
         else:
             if st.session_state.get('last_mode') != mode:
                 st.session_state['last_mode'] = mode
-                st.session_state['sa_input'] = "0"
-                st.session_state['sw_input'] = "0"
-                if 'current_items_df' in st.session_state: del st.session_state['current_items_df']
                 st.session_state['last_q'] = None
         
         current_year = datetime.now().year
         def get_val(key, default): return q_data.get(key, default) if is_revision else default
         
-        # استكمال الشاشة فقط لو مفيش مشكلة في الـ Revise
         if not (mode == "Revise Existing Quotation" and not is_revision):
             col1, col2, col3 = st.columns(3)
             
@@ -257,9 +226,7 @@ else:
                     sc_c1, sc_c2 = st.columns([2, 1])
                     with sc_c1:
                         final_country_input = st.text_input("Country Name", value=db_country if (is_revision and db_country not in country_list) else "")
-                    
                     matched_country = next((k for k in countries_map.keys() if k.lower() == final_country_input.strip().lower()), None)
-                    
                     with sc_c2:
                         default_cc = q_data['quotation_no'].split('-')[0] if (is_revision and q_data.get('quotation_no')) else ""
                         if matched_country:
@@ -291,15 +258,11 @@ else:
                                             index=["Re-Measurable", "Lump-sum"].index(get_val('pricing_base', "Re-Measurable")) if is_revision else 0)
                 
                 sc_1, sc_2 = st.columns(2)
+                # استخدام number_input الأصلي عشان نمنع البطء، وهيعمل فواصل ألوف أوتوماتيك ويخفي الكسور بفضل format="%.0f"
                 with sc_1: 
-                    sw_in = st.text_input("Steel Weight (MT)", key="sw_input", on_change=format_money)
-                    try: steel_weight = float(sw_in.replace(',', ''))
-                    except: steel_weight = 0.0
-                    
+                    steel_weight = st.number_input("Steel Weight (MT)", min_value=0.0, step=1.0, format="%.0f", value=float(get_val('steel_weight', 0.0)))
                 with sc_2: 
-                    sa_in = st.text_input("Steel Amount (EGP)", key="sa_input", on_change=format_money)
-                    try: steel_amount = float(sa_in.replace(',', ''))
-                    except: steel_amount = 0.0
+                    steel_amount = st.number_input("Steel Amount (EGP)", min_value=0.0, step=100.0, format="%.0f", value=float(get_val('steel_amount', 0.0)))
 
             if is_revision: quotation_no = q_data.get('quotation_no', f"{cc}-{get_next_serial():03d}-{current_year}")
             else: quotation_no = f"{cc}-{get_next_serial():03d}-{current_year}"
@@ -331,40 +294,37 @@ else:
             st.subheader("🛠️ Other Items")
             item_options = ["Single Skin", "Sandwich Panel", "Standing Seam", "Rain Gutter", "Skylight", 
                             "Wall Light", "Grating", "Chequered Plate", "Metal Decking", "Lifeline", "Ridge Panel", "Other"]
-            default_cols = ["Item", "Description", "Unit", "QTY", "Unit Price", "Item Value"]
+            default_cols = ["Item", "Description", "Unit", "QTY", "Unit Price"]
             
-            if 'current_items_df' not in st.session_state:
-                if is_revision and q_data.get('items_data'):
-                    try:
-                        parsed_data = json.loads(q_data['items_data'])
-                        df = pd.DataFrame(parsed_data) if parsed_data else pd.DataFrame(columns=default_cols)
-                        for col in default_cols:
-                            if col not in df.columns: df[col] = 0.0
-                        st.session_state['current_items_df'] = df
-                    except: st.session_state['current_items_df'] = pd.DataFrame(columns=default_cols)
-                else: st.session_state['current_items_df'] = pd.DataFrame(columns=default_cols)
+            # بناء الداتا المبدئية للجدول
+            if is_revision and q_data.get('items_data'):
+                try:
+                    df_initial = pd.DataFrame(json.loads(q_data['items_data']))
+                    for col in default_cols:
+                        if col not in df_initial.columns: df_initial[col] = 0.0
+                except: df_initial = pd.DataFrame(columns=default_cols)
+            else: df_initial = pd.DataFrame(columns=default_cols)
 
-            st.markdown("*Note: Press **Enter** or click outside the cell after typing to instantly update the 'Item Value'.*")
+            st.markdown("*Note: Edit quantities and prices below. Totals will update instantly.*")
             
+            # عرض الجدول بطريقة خفيفة ومباشرة بدون Loops
             edited_items = st.data_editor(
-                st.session_state['current_items_df'],
+                df_initial,
                 num_rows="dynamic",
                 column_config={
                     "Item": st.column_config.SelectboxColumn("Item", options=item_options, required=True),
                     "QTY": st.column_config.NumberColumn("QTY", min_value=0.0),
-                    "Unit Price": st.column_config.NumberColumn("Unit Price (Rate)", min_value=0.0),
-                    "Item Value": st.column_config.NumberColumn("Item Value (Auto)", disabled=True)
+                    "Unit Price": st.column_config.NumberColumn("Unit Price (Rate)", min_value=0.0)
                 },
                 use_container_width=True
             )
 
+            # الحسابات اللحظية بدون حفظ في session_state معقد
             edited_items['QTY'] = pd.to_numeric(edited_items['QTY'], errors='coerce').fillna(0)
             edited_items['Unit Price'] = pd.to_numeric(edited_items['Unit Price'], errors='coerce').fillna(0)
             edited_items['Item Value'] = edited_items['QTY'] * edited_items['Unit Price']
             
-            st.session_state['current_items_df'] = edited_items
             new_total_val = edited_items['Item Value'].sum()
-
             items_json = edited_items.to_json(orient='records')
             total_val = float(steel_amount) + float(new_total_val)
 
@@ -399,7 +359,7 @@ else:
                                    client_company, client_contact, client_mobile, client_email, client_address, 
                                    consultant_office, consultant_contact, consultant_mobile, consultant_email, 
                                    consultant_address, pricing_base, steel_weight, steel_amount, total_val, items_json, status, quotation_no))
-                        st.toast(f"✅ Quotation {quotation_no} Updated successfully!")
+                        st.success(f"✅ Quotation {quotation_no} Updated successfully!")
                     else:
                         try:
                             c.execute('''INSERT INTO quotations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
@@ -407,7 +367,7 @@ else:
                                        scope, client_type, client_company, client_contact, client_mobile, client_email, 
                                        client_address, consultant_office, consultant_contact, consultant_mobile, consultant_email, 
                                        consultant_address, pricing_base, steel_weight, steel_amount, total_val, items_json, status))
-                            st.toast(f"✅ Quotation {quotation_no} saved successfully!")
+                            st.success(f"✅ Quotation {quotation_no} saved successfully!")
                         except sqlite3.IntegrityError:
                             st.error("A quotation with this number already exists.")
                     conn.commit()
@@ -418,11 +378,8 @@ else:
     # ==========================================
     elif choice == "Quotation Log":
         conn = sqlite3.connect('peb_system.db')
-        
-        if is_admin:
-            query = "SELECT * FROM quotations ORDER BY quotation_no DESC"
-        else:
-            query = f"SELECT * FROM quotations WHERE sales_rep='{st.session_state.username}' ORDER BY quotation_no DESC"
+        if is_admin: query = "SELECT * FROM quotations ORDER BY quotation_no DESC"
+        else: query = f"SELECT * FROM quotations WHERE sales_rep='{st.session_state.username}' ORDER BY quotation_no DESC"
             
         df_raw = pd.read_sql_query(query, conn)
         conn.close()
@@ -464,10 +421,8 @@ else:
     # --- 5. Collections ---
     # ==========================================
     elif choice == "Collections":
-        if is_admin:
-            st.success("💰 **Admin View:** You have full access to view and edit collections for ALL projects and Sales Reps.")
-        else:
-            st.info(f"💰 **Sales View:** You can only view and update collections for projects assigned to **{st.session_state.username}**.")
+        if is_admin: st.success("💰 **Admin View:** You have full access to view and edit collections for ALL projects and Sales Reps.")
+        else: st.info(f"💰 **Sales View:** You can only view and update collections for projects assigned to **{st.session_state.username}**.")
         st.write("(Module under construction)")
 
     # ==========================================
@@ -494,7 +449,6 @@ else:
                    client_mobile as "Mobile", client_email as "Email", client_address as "Address", 'Client' as "Type"
             FROM quotations WHERE client_company != ''
         ''', conn)
-        
         df_consultants = pd.read_sql_query('''
             SELECT DISTINCT consultant_contact as "Contact Name", consultant_office as "Company / Office",
                    consultant_mobile as "Mobile", consultant_email as "Email", consultant_address as "Address", 'Consultant' as "Type"
@@ -503,14 +457,11 @@ else:
         conn.close()
         
         if not df_clients.empty or not df_consultants.empty:
-            df_prospects = pd.concat([df_clients, df_consultants], ignore_index=True)
-            df_prospects = df_prospects.drop_duplicates(subset=["Company / Office", "Contact Name"])
-            
+            df_prospects = pd.concat([df_clients, df_consultants], ignore_index=True).drop_duplicates(subset=["Company / Office", "Contact Name"])
             def style_type(val):
                 if val == 'Client': return 'background-color: #17a2b8; color: white'
                 if val == 'Consultant': return 'background-color: #6c757d; color: white'
                 return ''
-                
             styled_prospects = df_prospects.style.map(style_type, subset=['Type'])
             st.dataframe(styled_prospects, use_container_width=True, hide_index=True)
         else:
